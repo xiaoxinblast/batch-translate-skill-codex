@@ -169,7 +169,7 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 
 > ⚠️ **强制步骤**。
 
-调用 context-analyzer 技能（建议以子代理方式执行）。返回后确认报告完整，写入 `batch_state.json` 的 `document_summary` 字段。
+启动 `context-analyzer` 子代理角色（角色文件：`~/.codex/agents/context-analyzer.toml`）。返回后确认报告完整，写入 `batch_state.json` 的 `document_summary` 字段。
 
 ### 6. 术语缺口核查（只读）
 
@@ -188,7 +188,7 @@ python batch_translate/batch.py next --review  # 全译文文件（跳过翻译�
 
 ### Step 2: 翻译（仅 translate 模式）
 
-调用 translator 技能（建议以子代理方式执行）。任务参数中必须使用**绝对路径**指定输入输出文件（从 `batch_state.json` 的 `stem` 推导）。
+启动 `translator` 子代理角色（角色文件：`~/.codex/agents/translator.toml`）。任务参数中必须使用**绝对路径**指定输入输出文件（从 `batch_state.json` 的 `stem` 推导）。
 
 - locked=true 的条目：保留 target 不变，**严禁对译文进行任何改动**（这些是100%匹配的已交付译文）
 - locked=false 的条目：从零翻译
@@ -201,7 +201,7 @@ python batch_translate/batch.py review _batch_NNN_translated.json
 
 ### Step 4: 校对（共用）
 
-调用 trans-reviewer 技能（建议以子代理方式执行）。任务参数中必须使用**绝对路径**。
+启动 `trans-reviewer` 子代理角色（角色文件：`~/.codex/agents/trans-reviewer.toml`）。任务参数中必须使用**绝对路径**。
 
 > locked=true 的条目**严禁修改**——校对时同样遵循此规则。
 
@@ -237,8 +237,12 @@ submit 内部自动执行 write + TM 积累 + 重新 parse + 生成下一批 JSO
 - **含中文/emoji 输出时**：优先使用独立脚本文件
 - **pip**：用 `python -m pip install` 而非 `pip install`
 
-## 子代理模型分工（Codex）
+## 子代理角色（Codex）
 
-原 Reasonix 分工：`context-analyzer` 用 flash 快速扫描；`translator`、`trans-reviewer` 用 pro 保证质量。
+三个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
 
-Codex 中子代理默认继承主模型；如需保持分工，可在创建子代理时显式指定模型（如 `deepseek-v4-pro`）。注意：DeepSeek Responses API 目前仅支持 `deepseek-v4-flash`、暂不支持 pro；若指定模型在当前 provider 不可用，沿用主模型即可，不要阻塞流程。
+- `context-analyzer.toml`：指定 `deepseek-v4-flash`，快速全量语境分析
+- `translator.toml`：不指定 model（继承主模型），文件内保留原 pro 分工说明与启用注释
+- `trans-reviewer.toml`：不指定 model（继承主模型），文件内保留原 pro 分工说明与启用注释
+
+DeepSeek Responses API 目前仅支持 `deepseek-v4-flash`；待支持 pro 后可按角色文件内注释启用。

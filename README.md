@@ -11,18 +11,29 @@ Reasonix 版请使用 [batch-translate-skill](https://github.com/xiaoxinblast/ba
 ```bash
 python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo xiaoxinblast/batch-translate-skill-codex \
-  --path batch-translate context-analyzer translator trans-reviewer
+  --path batch-translate
+```
+
+然后安装三个子代理角色（个人级）：
+
+```powershell
+$dst = "$HOME\.codex\agents"
+New-Item -ItemType Directory -Force -Path $dst | Out-Null
+Copy-Item -Force agents\*.toml -Destination $dst
 ```
 
 安装后重启 Codex（或新开对话）即可生效。
 
 ### 方式二：手动复制
 
-把四个技能目录复制到 `~/.codex/skills/`：
+把主技能目录复制到 `~/.codex/skills/`，角色文件复制到 `~/.codex/agents/`：
 
 ```powershell
-$dst = "$HOME\.codex\skills"
-Copy-Item -Recurse -Force batch-translate, context-analyzer, translator, trans-reviewer -Destination $dst
+$skills = "$HOME\.codex\skills"
+$agents = "$HOME\.codex\agents"
+New-Item -ItemType Directory -Force -Path $agents | Out-Null
+Copy-Item -Recurse -Force batch-translate -Destination $skills
+Copy-Item -Force agents\*.toml -Destination $agents
 ```
 
 ## 工具包
@@ -43,11 +54,13 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 
 技能自动完成：安装工具包 → 扫描项目文件 → 编译风格指南/术语库 → 全量语境分析 → 分批翻译 → 逐批校对 → 写回。
 
-## 技能组成
+## 组成
 
-| 技能 | 职责 |
-|------|------|
-| `batch-translate` | 主流程编排（安装工具包、扫描、初始化、循环调度） |
-| `context-analyzer` | 全量语境分析，识别文档分段与术语缺口 |
-| `translator` | 日→中翻译，按风格指南产出自然中文 |
-| `trans-reviewer` | 硬性错误检查 + 语言润色 |
+| 类型 | 名称 | 职责 |
+|------|------|------|
+| 技能 | `batch-translate` | 主流程编排（安装工具包、扫描、初始化、循环调度） |
+| 角色 | `context-analyzer`（`agents/context-analyzer.toml`） | 全量语境分析，识别文档分段与术语缺口 |
+| 角色 | `translator`（`agents/translator.toml`） | 日→中翻译，按风格指南产出自然中文 |
+| 角色 | `trans-reviewer`（`agents/trans-reviewer.toml`） | 硬性错误检查 + 语言润色 |
+
+> 三个子代理由 Codex 自定义角色（`~/.codex/agents/*.toml`）替代了此前的同名技能，角色文件内含各自的 `developer_instructions` 与模型分工说明。
