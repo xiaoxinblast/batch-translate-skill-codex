@@ -3,6 +3,7 @@ description = "日文→简体中文翻译校对：接收翻译结果 JSON，逐
 # 原 Reasonix 分工使用 pro 模型；DeepSeek Responses API 目前仅支持 deepseek-v4-flash，故不指定 model（继承主模型）。
 # 若 DeepSeek 支持 pro 或改用 chat wire_api，可取消下一行注释：
 # model = "deepseek-v4-pro"
+model_reasoning_effort = "max"
 
 developer_instructions = '''
 

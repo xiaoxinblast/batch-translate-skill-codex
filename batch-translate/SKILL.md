@@ -245,4 +245,6 @@ submit 内部自动执行 write + TM 积累 + 重新 parse + 生成下一批 JSO
 - `translator.toml`：不指定 model（继承主模型），文件内保留原 pro 分工说明与启用注释
 - `trans-reviewer.toml`：不指定 model（继承主模型），文件内保留原 pro 分工说明与启用注释
 
+三个角色均设置 `model_reasoning_effort = "max"`（沿用 Reasonix 原分工）。
+
 DeepSeek Responses API 目前仅支持 `deepseek-v4-flash`；待支持 pro 后可按角色文件内注释启用。
