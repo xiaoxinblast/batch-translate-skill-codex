@@ -241,10 +241,8 @@ submit 内部自动执行 write + TM 积累 + 重新 parse + 生成下一批 JSO
 
 三个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
 
-- `context-analyzer.toml`：指定 `deepseek-v4-flash`，快速全量语境分析
-- `translator.toml`：不指定 model（继承主模型），文件内保留原 pro 分工说明与启用注释
-- `trans-reviewer.toml`：不指定 model（继承主模型），文件内保留原 pro 分工说明与启用注释
-
-三个角色均设置 `model_reasoning_effort = "max"`（沿用 Reasonix 原分工）。
+- `context-analyzer.toml`：指定 `deepseek-v4-flash` + `high` 思考强度，快速全量语境分析
+- `translator.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
+- `trans-reviewer.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
 
 DeepSeek Responses API 目前仅支持 `deepseek-v4-flash`；待支持 pro 后可按角色文件内注释启用。
