@@ -236,3 +236,9 @@ submit 内部自动执行 write + TM 积累 + 重新 parse + 生成下一批 JSO
 - **独立 `.py` 脚本文件**优先于 heredoc（避免 GBK 编码和 loop guard 问题），如 `batch_translate/scripts/verify_batch.py`
 - **含中文/emoji 输出时**：优先使用独立脚本文件
 - **pip**：用 `python -m pip install` 而非 `pip install`
+
+## 子代理模型分工（Codex）
+
+原 Reasonix 分工：`context-analyzer` 用 flash 快速扫描；`translator`、`trans-reviewer` 用 pro 保证质量。
+
+Codex 中子代理默认继承主模型；如需保持分工，可在创建子代理时显式指定模型（如 `deepseek-v4-pro`）。注意：DeepSeek Responses API 目前仅支持 `deepseek-v4-flash`、暂不支持 pro；若指定模型在当前 provider 不可用，沿用主模型即可，不要阻塞流程。

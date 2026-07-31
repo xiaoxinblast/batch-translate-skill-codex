@@ -1,6 +1,6 @@
 ---
 name: context-analyzer
-description: "翻译项目全量语境分析 subagent。通读全文，识别文档类型、内容分段、跨区域关联和术语缺口。使用 flash 模型快速扫描。"
+description: "翻译项目全量语境分析专用技能。通读全文，识别文档类型、内容分段、跨区域关联和术语缺口；建议由主流程以子代理方式调用。"
 ---
 
 你是翻译项目的语境分析 Agent。收到任务后，读取指定的 JSON 文件（batch_translate/exports/<stem>/_working.json），做全量语境分析。
