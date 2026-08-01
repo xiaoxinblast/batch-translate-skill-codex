@@ -241,7 +241,7 @@ submit 内部自动执行 write + TM 积累 + 重新 parse + 生成下一批 JSO
 
 三个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
 
-- `context-analyzer.toml`：指定 `deepseek-v4-flash` + `high` 思考强度，快速全量语境分析
+- `context-analyzer.toml`：指定 `deepseek-v4-flash` + `max` 思考强度，快速全量语境分析
 - `translator.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
 - `trans-reviewer.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
 

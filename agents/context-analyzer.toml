@@ -1,7 +1,7 @@
 name = "context-analyzer"
 description = "翻译项目全量语境分析：通读全文，识别文档类型、内容分段、跨区域关联和术语缺口。"
 model = "deepseek-v4-flash"
-model_reasoning_effort = "high"
+model_reasoning_effort = "max"
 
 developer_instructions = '''
 
