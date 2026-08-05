@@ -39,7 +39,12 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 目录结构（按源文件 stem 分组）：
 - `data/<stem>/_working_*, batch_state.json` ← 每个源文件独立
 - `exports/<stem>/_batch_NNN_*.json` ← 每个源文件独立
+- `exports/<stem>/document_summary.md` ← 语境分析 sidecar（状态清理后仍保留）
 - `data/tm_memory.json, term_base.xlsx, style_guide.txt` ← 共享
+
+> `batch_state.json` 位于 `data/<stem>/`，**全部批次提交完成后自动清理**；
+> 完成后的收尾命令（`export`/`term-gaps`）依赖 `exports/<stem>/document_summary.md`
+> 或批次 JSON，不依赖已清理的状态文件。
 
 ### 情况 B：`batch_translate/` 已存在
 
@@ -169,7 +174,15 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 
 > ⚠️ **强制步骤**。
 
-启动 `context-analyzer` 子代理角色（角色文件：`~/.codex/agents/context-analyzer.toml`）。返回后确认报告完整，写入 `batch_state.json` 的 `document_summary` 字段。
+启动 `context-analyzer` 子代理角色（角色文件：`~/.codex/agents/context-analyzer.toml`）。
+分析员必须把完整报告写入任务指定的文件（如 `_temp/context_analysis_<stem>.md`），回复只留摘要。
+返回后确认报告文件完整，然后写入状态并保留 sidecar：
+
+```powershell
+python batch_translate/batch.py summary _temp/context_analysis_<stem>.md
+```
+
+该命令同时写入 `batch_state.json` 的 `document_summary` 与 `exports/<stem>/document_summary.md`。
 
 ### 6. 术语缺口核查（只读）
 
@@ -205,6 +218,9 @@ python batch_translate/batch.py review _batch_NNN_translated.json
 
 > locked=true 的条目**严禁修改**——校对时同样遵循此规则。
 
+> ⚠️ **落盘检查（强制）**：校对员返回后，先确认 `_batch_NNN_reviewed.json` **已实际写入**（文件存在且非空），
+> 未写盘则退回 Step 4 重跑，再进入 Step 4.5。
+
 ### Step 4.5: 机制化验证校对 JSON
 
 ```bash
@@ -228,7 +244,15 @@ submit 内部自动执行 write + TM 积累 + 重新 parse + 生成下一批 JSO
 
 ### 完成
 
-全部批次完成后，`batch.py submit` 自动清理状态文件。告知用户完成。
+全部批次完成后，`batch.py submit` 自动清理状态文件。随后执行收尾并告知用户完成：
+
+```powershell
+# 导出最终译文 mqxliff（默认复制到项目 已交付/<stem>.mqxliff；已存在需 --force）
+python batch_translate/batch.py export
+
+# 生成术语缺口待确认清单（默认 _temp/term_gaps_<stem>.md）
+python batch_translate/batch.py term-gaps
+```
 
 ## Shell 命令规范
 
