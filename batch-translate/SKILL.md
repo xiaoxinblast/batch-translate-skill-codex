@@ -132,7 +132,7 @@ ls -la
 > ⚠️ **强制步骤**：必须在 init 之前完成。
 
 - 用 python heredoc：`python << 'PYEOF' ... PYEOF`，输出重定向到文件后读取内容核验
-- 必须包含：弯引号规范、破折号/省略号规范、日中翻译注意事项（正反示例各至少一个）
+- 必须包含：弯引号规范、破折号/省略号规范，以及完整「日中翻译注意事项（附正反示例）」一节（九项规则 + 正反示例，内容见本 skill 的 `references/ja-sc-style-notes.md`，直接复制该节写入）
 - **必须用文件写入工具（Codex 中为 apply_patch）将风格指南写入文件**
 
 ### 2. 生成术语库 → `batch_translate/data/term_base.xlsx`
