@@ -1,6 +1,6 @@
 ---
 name: batch-translate
-description: "批量翻译工作流（Codex 适配版 v5）。支持 mqxliff/docx/xlsx/txt → 分批翻译 → 逐批校对 → 写回，全自动循环。混合文件原生支持 + 独立验证脚本 + 绝对路径 + UTF-8 规范；Windows 默认 PowerShell。"
+description: "批量翻译工作流（Codex 适配版 v6）。支持 mqxliff/docx/xlsx/txt → 分批翻译 → 逐批校对 → 写回，全自动循环。混合文件原生支持 + 独立验证脚本 + 绝对路径 + UTF-8 规范；Windows 默认 PowerShell。"
 ---
 
 # batch-translate — 批量翻译工作流
@@ -135,6 +135,8 @@ ls -la
 - 必须包含：弯引号规范、破折号/省略号规范，以及完整「日中翻译注意事项（附正反示例）」一节（九项规则 + 正反示例，内容见本 skill 的 `references/ja-sc-style-notes.md`，直接复制该节写入）
 - **必须用文件写入工具（Codex 中为 apply_patch）将风格指南写入文件**
 
+> **职责边界（强制）**：本 skill 与子代理角色文件只写通用流程与通用翻译准则；项目专属规则（术语、风格、特殊条目类型等）一律由编译后的 `style_guide.txt`、`term_base.xlsx`、`note`、语境分析报告注入，禁止写入角色文件或本 skill。
+
 ### 2. 生成术语库 → `batch_translate/data/term_base.xlsx`
 
 - ⚠️ 读取参考文件时必须读取全部行，禁止截断
@@ -188,6 +190,14 @@ python batch_translate/batch.py summary _temp/context_analysis_<stem>.md
 
 若语境分析报告含「疑似术语库未覆盖的专名」清单，核查术语库是否已存在。**不询问用户、不写入术语库、不阻塞流程**。
 
+### 7. 续跑/复跑（可选）
+
+已完成或中断的批次，可用 `init --resume <已交付/<stem>.mqxliff>` 或 `data/<stem>/_working_<stem>.mqxliff` 重新初始化：
+
+- 状态文件已存在 → 不覆盖，直接运行 `next` 继续
+- 状态已清理 → 从带译文文件重新初始化，已有译文自动锁定
+- 若 `exports/<stem>/document_summary.md` 已存在，跳过本阶段第 5 步（语境分析 + summary），直接进入阶段二
+
 ## 阶段二：自动循环
 
 反复执行以下步骤直到全部批次完成。
@@ -218,8 +228,9 @@ python batch_translate/batch.py review _batch_NNN_translated.json
 
 > locked=true 的条目**严禁修改**——校对时同样遵循此规则。
 
-> ⚠️ **落盘检查（强制）**：校对员返回后，先确认 `_batch_NNN_reviewed.json` **已实际写入**（文件存在且非空），
-> 未写盘则退回 Step 4 重跑，再进入 Step 4.5。
+> ⚠️ **落盘检查（强制）**：校对员返回后，确认 `_batch_NNN_reviewed.json` **已实际写入且内容符合要求**：
+> 文件存在且非空、mtime 已更新、条目数 = N、id 全覆盖、locked 条目未改动、follow-up 指定的 id 已生效。
+> 不满足则退回 Step 4 重跑，或由根代理机械修正后复验，再进入 Step 4.5。
 
 ### Step 4.5: 机制化验证校对 JSON
 
@@ -232,7 +243,7 @@ python batch_translate/scripts/verify_batch.py --stem <stem>
 **分级处理**：
 - `RESULT: PASS (...)` exit 0 → 进入 Step 5
 - `FATAL:` 非 0 退出码 → 退回 Step 4 重跑
-- `WARNING:` + `PASS with warnings` → 退回 Step 4 修正后重跑
+- `WARNING:` + `PASS with warnings` → 退回 Step 4 修正后重跑；若警告为已验证的规则豁免（如占位符/actor 条目）或经人工判定可接受，可加 `--allow-warnings` 放行，并在最终回复中记录原因
 
 ### Step 5: 提交并推进
 
@@ -261,6 +272,12 @@ python batch_translate/batch.py term-gaps
 - **含中文/emoji 输出时**：优先使用独立脚本文件
 - **pip**：用 `python -m pip install` 而非 `pip install`
 
+## 常见坑（通用）
+
+- **XML 实体**：译文正文里的 `&`、`<` 等字符由工具在写回时自动转义（lxml 序列化），不要手写 `&amp;`；也不要改动 `<tag .../>` 标签标记。
+- **占位符标签条目**（如 `<actor>`）：正文是否省略、只保留占位符，以项目 style_guide/instructions/note 为准；验证脚本对占位符条目豁免标签数严格比对，但仍要求占位符标签本身存在。
+- **Windows 控制台 GBK 乱码**：脚本已内置 UTF-8 输出；如仍乱码，可先执行 `chcp 65001` 或设置 `$env:PYTHONIOENCODING='utf-8'`。
+
 ## 子代理角色（Codex）
 
 三个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
@@ -268,5 +285,6 @@ python batch_translate/batch.py term-gaps
 - `context-analyzer.toml`：指定 `deepseek-v4-flash` + `max` 思考强度，快速全量语境分析
 - `translator.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
 - `trans-reviewer.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
+- **临时文件纪律**：子代理如需辅助脚本/中间文件，一律放项目 `_temp/` 或 `_temp_scripts/`，用后删除；禁止在 `batch_translate/`（data、exports 为受管目录）内创建文件。
 
 DeepSeek Responses API 目前仅支持 `deepseek-v4-flash`；待支持 pro 后可按角色文件内注释启用。
