@@ -1,6 +1,6 @@
 ---
 name: batch-translate
-description: "批量翻译工作流（Codex 适配版 v8）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、语境分片、分批翻译、逐批校对、程序化 QA、AI QA 复核、严格验证和独立文件导出；Windows 默认 PowerShell。"
+description: "批量翻译工作流（Codex 适配版 v9）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、永久/运行期分层 TM、语境分片、分批翻译、逐批校对、程序化 QA、AI QA 复核、严格验证和独立文件导出；Windows 默认 PowerShell。"
 ---
 
 # batch-translate — 批量翻译工作流
@@ -18,7 +18,7 @@ description: "批量翻译工作流（Codex 适配版 v8）。支持 mqxliff/doc
 
 > ⚠️ **强制步骤**：每次触发本 skill 必须首先执行，不可跳过。
 
-先运行 `python -c "import sys; assert sys.version_info >= (3, 10), sys.version"`，确认解释器为 Python 3.10 或更高版本；再把 `<skill_dir>` 解析为本 `SKILL.md` 所在目录的绝对路径。工具包必须满足 workflow protocol 8。
+先运行 `python -c "import sys; assert sys.version_info >= (3, 10), sys.version"`，确认解释器为 Python 3.10 或更高版本；再把 `<skill_dir>` 解析为本 `SKILL.md` 所在目录的绝对路径。工具包必须满足 workflow protocol 9。
 
 ### 情况 A：`batch_translate/` 不存在
 
@@ -47,7 +47,9 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 - `data/<project-id>/project_rules/` ← 项目验证/QA 策略快照，工具包更新不得覆盖
 - `exports/<project-id>/_batch_NNN_*.json` ← 每个源文件独立
 - `exports/<project-id>/document_summary.md` ← 语境分析 sidecar（状态清理后仍保留）
-- `data/tm_memory.json, term_base.xlsx, style_guide.txt` ← 共享
+- `data/term_base.xlsx, data/style_guide.txt` ← 共享术语库和风格指南
+- 用户指定的永久 TM（例如 `data/tm_memory.json`）← 项目权威参考，只读
+- `data/<project-id>/tm_runtime/_batch_NNN.json` ← 当前项目每批独立的运行期 TM，不与永久 TM 合并
 
 > `batch_state.json` 位于 `data/<project-id>/`，**全部批次提交完成后自动清理**；
 > 完成后的收尾命令（`export`/`term-gaps`）依赖 `exports/<project-id>/document_summary.md`
@@ -170,7 +172,7 @@ ls -la
 
 ### 3. 创建翻译记忆
 
-根据用户选择创建或导入 TM。
+根据用户选择创建或导入**永久 TM**。它只作为权威参考，工作流不会写回该文件；运行期 TM 由每次 `submit` 自动按批生成。
 
 ### 4. 运行 init
 
@@ -181,14 +183,14 @@ ls -la
 python batch_translate/batch.py init <源文件> \
   --batch-chars 3000 --context-size 5 \
   --terms batch_translate/data/term_base.xlsx \
-  --tm batch_translate/data/tm_memory.json \
+  --tm-permanent batch_translate/data/tm_memory.json \
   --style-guide batch_translate/data/style_guide.txt
 ```
 
 PowerShell（Windows 默认，单行写法）：
 
 ```powershell
-python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-size 5 --terms batch_translate/data/term_base.xlsx --tm batch_translate/data/tm_memory.json --style-guide batch_translate/data/style_guide.txt
+python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-size 5 --terms batch_translate/data/term_base.xlsx --tm-permanent batch_translate/data/tm_memory.json --style-guide batch_translate/data/style_guide.txt
 ```
 
 可选参数：
@@ -196,6 +198,7 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 - xlsx/xlsm：`--source-col C --target-col D --header-row 3 --sheet <名称>`；`--sheet "*"` 处理全部工作表。
 - 项目校验策略：`--validation-policy <validation_policy.json>`。仅用它声明项目允许的例外，不得修改通用校验器硬编码项目规则。
 - 项目 QA 策略：`--qa-policy <qa_policy.json>`。初始化后会复制为 `data/<project-id>/project_rules/qa_policy.json` 快照。
+- 永久 TM：`--tm-permanent <tm.json>`；旧参数 `--tm <tm.json>` 仍作为只读永久 TM 别名保留。可选 `--tm-runtime-dir <目录>` 覆盖默认的 `data/<project-id>/tm_runtime/`。
 - 项目选择：`--project <project-id>` 可显式命名；省略时优先使用 stem，同名冲突自动附加路径哈希。重复初始化现有状态会被拒绝，确需重建时显式使用 `--force-reinit`。
 
 ### 4.5. 模式判定
@@ -254,6 +257,9 @@ python batch_translate/batch.py next        # 普通/混合文件（自动锁定
 python batch_translate/batch.py next --review  # 全译文文件（跳过翻译）
 ```
 
+任务 JSON 中的 `tm_matches`/`tm_fragments` 来自永久 TM，`runtime_tm_matches`/`runtime_tm_fragments`
+来自本项目已经提交的各批运行期 TM。翻译和校对都读取两层；永久 TM 是权威层，若两层冲突必须优先参考永久层。
+
 ### Step 2: 翻译（仅 translate 模式）
 
 启动 `translator` 子代理角色（角色文件：`~/.codex/agents/translator.toml`）。任务参数中必须使用**绝对路径**指定输入输出文件（从 `batch_state.json` 的 `stem` 推导）。
@@ -308,7 +314,7 @@ python batch_translate/batch.py qa --project <project-id>
 exports/<project-id>/_batch_NNN_qa_task.json
 ```
 
-默认 QA 包括精确 TM 译文不一致、占位符/转义序列、数字、URL/邮箱、空格、括号、疑似未翻译、长度比例、术语一致性和重复译法；换行数量检查默认关闭，可在项目 `qa_policy.json` 中显式启用。locked=true/source_locked=true 条目跳过可修改型 QA。
+默认 QA 包括精确 TM 译文不一致、占位符/转义序列、数字、URL/邮箱、空格、括号、疑似未翻译、长度比例、术语一致性和重复译法；换行数量检查默认关闭，可在项目 `qa_policy.json` 中显式启用。精确 TM 检查先使用永久 TM；只有永久层没有精确匹配时才使用运行期 TM，永久与运行期译文冲突时以永久层为准。locked=true/source_locked=true 条目跳过可修改型 QA。
 
 - 无 finding：QA 状态标记为 `clean`，直接进入 Step 5 提交。
 - 有 finding：启动 `qa-reviewer`，不得直接 submit。
@@ -339,13 +345,15 @@ python batch_translate/batch.py qa-submit _batch_NNN_qa_reviewed.json --report _
 python batch_translate/batch.py submit _batch_NNN_reviewed.json
 ```
 
-submit 先完整校验，再以事务方式执行 write + TM 积累 + 重新 parse + 状态推进。
-任一步失败都会回滚工作文件、工作 JSON、TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
+submit 先完整校验，再以事务方式执行 write + 当前批运行期 TM 写入 + 重新 parse + 状态推进。
+永久 TM 始终只读；成功提交会生成 `data/<project-id>/tm_runtime/_batch_NNN.json`，只包含当前批已确认译文，不会与永久 TM 合并。任一步失败都会回滚工作文件、工作 JSON、当前批运行期 TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
 submit 遇到 warning 时默认阻断；若明确授权，必须同时传 `--allow-warnings --warning-reason "<具体原因>"`，理由和 warning 会写入 state，并在完成后保留到 manifest。
 
 ### 完成
 
 全部批次完成后，`batch.py submit` 自动清理状态文件。随后执行收尾并告知用户完成：
+
+完成后的 `exports/<project-id>/project_manifest.json` 会保留永久 TM 路径和运行期 TM 文件清单；`refresh`/恢复时继续按两层读取。
 
 ```powershell
 # 按原格式导出最终译文（默认写入项目 已交付/<原文件名>；已存在需 --force）

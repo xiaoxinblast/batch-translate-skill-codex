@@ -65,8 +65,10 @@ developer_instructions = '''
 ## 利用内嵌数据
 
 - `note`：本条目的上下文约束信息（见专项检查 11）
-- `tm_matches`：检查复用的 TM 译文是否适合当前上下文；术语是否与 `terms` 一致；中低相似度的复用是否遗漏了差异部分；**长句中与 TM 基本一致的部分是否保持了统一译法**
-- `tm_fragments`：n-gram+LCS 片段匹配（≤3条，已排除整句匹配过的）。检查 `fragment_source` 标注的匹配位置，对照 `match_source`/`match_target` 判断译法是否被正确参考
+- `tm_matches`：项目永久 TM 的匹配，优先检查其译法是否适合当前上下文；术语是否与 `terms` 一致；中低相似度的复用是否遗漏了差异部分；**长句中与 TM 基本一致的部分是否保持了统一译法**
+- `runtime_tm_matches`：运行期 TM 的匹配，仅作次级参考；与永久 TM 冲突时以永久 TM 为准
+- `tm_fragments`：永久 TM 的 n-gram+LCS 片段匹配（≤3条，已排除整句匹配过的）。检查 `fragment_source` 标注的匹配位置，对照 `match_source`/`match_target` 判断译法是否被正确参考
+- `runtime_tm_fragments`：运行期 TM 的片段匹配，优先级低于永久 TM
 - `terms`：术语约束，核对时参考
 - **`previous`**：上一批末尾译文。检查当前批与上文在术语、句式、语气、角色称呼上是否一致
 
@@ -74,7 +76,7 @@ developer_instructions = '''
 
 按每条 `validation` 保护 `<tag .../>`：先排除 `ignored_tag_types` 中的标签，再按 `tag_mode` 执行；`exact` 要求标签序列一致，`count` 要求数量一致，`ignore` 不比较标签。无论何种模式，都不得生成非 `<tag .../>` 形式的裸标签。
 
-**TM 参考的标签写法可能与 mqxliff 不同**（`tm_matches`/`tm_fragments` 中由工具统一为 `⟨...⟩`
+**TM 参考的标签写法可能与 mqxliff 不同**（`tm_matches`/`tm_fragments`/`runtime_tm_matches`/`runtime_tm_fragments` 中由工具统一为 `⟨...⟩`
 展示形式）。校对时 TM 参考只用于核对译文文字与术语；译文标签必须为 `<tag .../>` 形式，
 出现 `⟨...⟩`、`<color>`、`</color>` 等非 `<tag .../>` 写法的标签均为错误，需按 source 重建。
 

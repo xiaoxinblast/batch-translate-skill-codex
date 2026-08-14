@@ -56,17 +56,19 @@ developer_instructions = '''
 
 每条 entry 可能带有：
 - `note`：本条目的上下文约束信息（详见日中翻译特别注意 ⑪）
-- `tm_matches`：翻译记忆模糊匹配（含 similarity 分数、已有译文）
+- `tm_matches`：项目永久 TM 的模糊匹配（含 similarity 分数、已有译文），是最高优先级参考
   - **≥ 0.85**：可直接复用或微调
   - **0.6 ~ 0.85**：仅供参考，不得直接照搬
   - 目标译文中术语与 `terms` 冲突时，以 `terms` 为准
   - 同 source 有多条匹配时，优先选 similarity 最高且 context 吻合的
   - TM 的 context 仅供参考，以当前条目的 note/context 为准
   - **句段内部分一致**：整体相似度虽低，但句段中与 TM 基本一致的部分，其译法应与 TM 保持统一
-- `tm_fragments`：n-gram+LCS 找到的共享子串最多的 TM 条目（已排除整句匹配过的，≤3条）。每条含：
+- `runtime_tm_matches`：当前工作流已提交批次的运行期 TM 匹配，仅作次级参考；若与 `tm_matches` 冲突，优先永久 TM
+- `tm_fragments`：永久 TM 的 n-gram+LCS 共享子串匹配（已排除整句匹配过的，≤3条）。每条含：
   - `fragment_source`：查询句里哪段匹配了，在 `match_source` 中找到相同位置
   - `match_source` / `match_target`：TM 完整双语对照
   - AI 对照这三个字段自行判断对应译文，不需要程序截取
+- `runtime_tm_fragments`：运行期 TM 的片段匹配，字段结构同 `tm_fragments`，优先级低于永久 TM
 - `terms`：术语库匹配结果，确保术语译法与术语库一致
 - `context`：场景标识，同一角色/场景的用语应保持一致
 - **`previous`**：上一批末尾已翻译的条目（id + source + target），**仅供一致性参考，不得重新翻译**。当前条目与 `previous` 中同类句式、相同角色/场景的表达应保持一致
@@ -75,7 +77,7 @@ developer_instructions = '''
 
 按每条 `validation` 保护 `<tag .../>`：先排除 `ignored_tag_types` 中的标签，再按 `tag_mode` 执行；`exact` 要求标签序列一致，`count` 要求数量一致，`ignore` 不比较标签。无论何种模式，都不得生成非 `<tag .../>` 形式的裸标签。
 
-**TM 参考的标签写法可能与 mqxliff 不同**：`tm_matches`/`tm_fragments` 中的标签由工具统一为可读的
+**TM 参考的标签写法可能与 mqxliff 不同**：`tm_matches`/`tm_fragments`/`runtime_tm_matches`/`runtime_tm_fragments` 中的标签由工具统一为可读的
 `⟨...⟩` 展示形式（如 `⟨actor⟩`、`⟨color=orange⟩`、`⟨/color⟩`、换行）。TM 参考只用于获取译文文字与
 术语；译文中的标签一律按当前条目 source 的 `<tag .../>` 重建，禁止照抄 TM 参考中的标签写法。
 

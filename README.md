@@ -65,5 +65,5 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 ## 兼容性
 
 - Python 3.10+
-- skill workflow protocol 8
-- 工具包 `batch-translate` 8.x；自动更新前会验证 GitHub origin，更新后会验证协议
+- skill workflow protocol 9
+- 工具包 `batch-translate` 9.x；自动更新前会验证 GitHub origin，更新后会验证协议
