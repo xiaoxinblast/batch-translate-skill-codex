@@ -1,6 +1,6 @@
 ---
 name: batch-translate
-description: "批量翻译工作流（Codex 适配版 v7）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、语境分片、分批翻译、逐批校对、严格验证和独立文件导出；Windows 默认 PowerShell。"
+description: "批量翻译工作流（Codex 适配版 v8）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、语境分片、分批翻译、逐批校对、程序化 QA、AI QA 复核、严格验证和独立文件导出；Windows 默认 PowerShell。"
 ---
 
 # batch-translate — 批量翻译工作流
@@ -18,7 +18,7 @@ description: "批量翻译工作流（Codex 适配版 v7）。支持 mqxliff/doc
 
 > ⚠️ **强制步骤**：每次触发本 skill 必须首先执行，不可跳过。
 
-先运行 `python -c "import sys; assert sys.version_info >= (3, 10), sys.version"`，确认解释器为 Python 3.10 或更高版本；再把 `<skill_dir>` 解析为本 `SKILL.md` 所在目录的绝对路径。工具包必须满足 workflow protocol 7。
+先运行 `python -c "import sys; assert sys.version_info >= (3, 10), sys.version"`，确认解释器为 Python 3.10 或更高版本；再把 `<skill_dir>` 解析为本 `SKILL.md` 所在目录的绝对路径。工具包必须满足 workflow protocol 8。
 
 ### 情况 A：`batch_translate/` 不存在
 
@@ -44,6 +44,7 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 
 目录结构（按安全 project id 分组；同名源文件冲突时自动加路径哈希）：
 - `data/<project-id>/_working_*, batch_state.json, project_identity.json` ← 每个源文件独立
+- `data/<project-id>/project_rules/` ← 项目验证/QA 策略快照，工具包更新不得覆盖
 - `exports/<project-id>/_batch_NNN_*.json` ← 每个源文件独立
 - `exports/<project-id>/document_summary.md` ← 语境分析 sidecar（状态清理后仍保留）
 - `data/tm_memory.json, term_base.xlsx, style_guide.txt` ← 共享
@@ -138,6 +139,15 @@ ls -la
 > ⚠️ 若用户选择"从源文件导入已有译文"，必须提醒：
 > "源文件中已有的译文可能已过时。导入后需逐条核对。"
 
+### 5. 项目规则调查（建议执行）
+
+若未发现项目已有的 `validation_policy.json` 或 `qa_policy.json`，启动 `context-analyzer` 的 `mode=qa_policy_proposal`，读取项目说明、style guide、note、术语和源文件，生成 `_temp/qa_policy_proposal_<project-id>.json`。
+
+- 只把 `explicit` 要求列为可执行候选；`inferred`/`uncertain` 只展示，不自动启用。
+- 向用户展示候选规则与证据，用户确认后才写入项目策略快照。
+- 未确认的候选不改变默认策略；不得因为单条译文自动放宽全项目校验。
+- 已有项目策略时优先使用快照，不重复覆盖；只有用户明确要求重新调查才重新生成提案。
+
 ## 阶段一：项目初始化
 
 若目标 project id 下没有 `batch_state.json`，则尚未初始化。不要仅凭源文件 stem 判断；同名源文件可能对应不同 project id。
@@ -185,6 +195,7 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 
 - xlsx/xlsm：`--source-col C --target-col D --header-row 3 --sheet <名称>`；`--sheet "*"` 处理全部工作表。
 - 项目校验策略：`--validation-policy <validation_policy.json>`。仅用它声明项目允许的例外，不得修改通用校验器硬编码项目规则。
+- 项目 QA 策略：`--qa-policy <qa_policy.json>`。初始化后会复制为 `data/<project-id>/project_rules/qa_policy.json` 快照。
 - 项目选择：`--project <project-id>` 可显式命名；省略时优先使用 stem，同名冲突自动附加路径哈希。重复初始化现有状态会被拒绝，确需重建时显式使用 `--force-reinit`。
 
 ### 4.5. 模式判定
@@ -277,15 +288,52 @@ python batch_translate/scripts/verify_batch.py --stem <project-id>
 > 脚本内置 UTF-8 输出，无 GBK 编码问题；可连续调用不会被 loop guard 拦截。
 
 **分级处理**：
-- `RESULT: PASS (...)` exit 0 → 进入 Step 5
+- `RESULT: PASS (...)` exit 0 → 进入 Step 4.6
 - `FATAL:` 非 0 退出码 → 退回 Step 4 重跑
-- `WARNING:` + `RESULT: BLOCKED`（exit 3）→ 退回 Step 4 修正后重跑；仅当项目规则明确允许时才可同时加 `--allow-warnings --warning-reason "<具体原因>"` 放行
+- `WARNING:` + `RESULT: BLOCKED`（exit 3）→ 退回 Step 4 修正后重跑；仅当项目规则明确允许时才可同时加 `--allow-warnings --warning-reason "<具体原因>"` 放行，再进入 Step 4.6
 
 默认校验要求：批次 id 集合精确一致、id/target 类型正确、非锁定项 target 非空、locked target 原样保留；仅 source_locked=true 的空 target 可直接通过、
 除 `br` 外的标签序列精确一致、无裸标签、满足 `maxlengthchars`。默认不强制换行数量一致；项目若需更严格或确有例外，
 通过 `validation_policy.json` 统一配置，Step 4.5 与 submit 使用同一策略。
 
-### Step 5: 提交并推进
+### Step 4.6: 程序化 QA
+
+```powershell
+python batch_translate/batch.py qa --project <project-id>
+```
+
+该命令读取 `_batch_NNN_reviewed.json`，先重复硬性校验，再运行 QA 规则并生成：
+
+```text
+exports/<project-id>/_batch_NNN_qa_task.json
+```
+
+默认 QA 包括精确 TM 译文不一致、占位符/转义序列、数字、URL/邮箱、空格、括号、疑似未翻译、长度比例、术语一致性和重复译法；换行数量检查默认关闭，可在项目 `qa_policy.json` 中显式启用。locked=true/source_locked=true 条目跳过可修改型 QA。
+
+- 无 finding：QA 状态标记为 `clean`，直接进入 Step 5 提交。
+- 有 finding：启动 `qa-reviewer`，不得直接 submit。
+
+### Step 4.7: QA 代理复核
+
+`qa-reviewer` 必须使用绝对路径读取 QA task，并实际写入：
+
+```text
+_batch_NNN_qa_reviewed.json
+_batch_NNN_qa_report.json
+```
+
+QA task 中的 `qa_reviewed_path` 与 `qa_report_path` 是本批唯一有效的绝对输出路径；`qa-submit` 会拒绝路径不一致的文件。
+
+报告必须逐条给出 `fixed` 或 `false_positive` 及理由；遗漏、重复、`unresolved` 或修改锁定条目都必须退回重跑。返回后检查两个文件存在、非空、ID 全覆盖、locked 条目未改变。
+
+### Step 4.8: 提交 QA 结果
+
+```powershell
+python batch_translate/batch.py qa-submit _batch_NNN_qa_reviewed.json --report _batch_NNN_qa_report.json --project <project-id>
+```
+
+`qa-submit` 会重新执行硬性验证和 QA；修正后仍存在的 finding 或新产生的 finding 都阻断提交。只有通过后才执行事务写回并进入下一批。
+### Step 5: 提交并推进（无 QA finding 时）
 
 ```bash
 python batch_translate/batch.py submit _batch_NNN_reviewed.json
@@ -325,9 +373,10 @@ python batch_translate/batch.py term-gaps
 
 ## 子代理角色（Codex）
 
-三个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
+四个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
 
 - `context-analyzer.toml`：`gpt-5.6-luna` + `max`，用于全量或分片语境扫描
 - `translator.toml`：`gpt-5.6-sol` + `high`，用于逐条翻译
 - `trans-reviewer.toml`：`gpt-5.6-sol` + `high`，用于逐条校对
+- `qa-reviewer.toml`：`gpt-5.6-luna` + `max`，用于复核程序化 QA finding
 - **临时文件纪律**：子代理如需辅助脚本/中间文件，一律放项目 `_temp/` 或 `_temp_scripts/`，用后删除；禁止在 `batch_translate/`（data、exports 为受管目录）内创建文件。

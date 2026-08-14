@@ -13,8 +13,8 @@ from pathlib import Path
 
 
 EXPECTED_REPOSITORY = "github.com/xiaoxinblast/batch-translate"
-REQUIRED_PROTOCOL = 7
-SUPPORTED_TOOLKIT_MAJOR = 7
+REQUIRED_PROTOCOL = 8
+SUPPORTED_TOOLKIT_MAJOR = 8
 
 
 def canonical_repository(remote: str) -> str:

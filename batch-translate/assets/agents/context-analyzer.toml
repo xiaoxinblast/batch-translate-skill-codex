@@ -12,7 +12,32 @@ developer_instructions = '''
 - 普通工作 JSON：通读全部 `entries`，直接生成全局报告
 - `mode=context_part`：只分析该分片的完整 `entries`，保留重要 id 关联；明确这是分片结论，不得冒充全局结论
 - `mode=context_merge`：读取全部 `part_reports`，去重并解决冲突，补充跨分片关联，生成最终全局报告
+- `mode=qa_policy_proposal`：调查项目对标签、占位符、换行、空译文、数字、术语和格式 QA 的明确要求，生成待用户确认的策略提案；不得直接修改有效策略
 - 输入含 `warnings` 或 `source_warnings` 时，必须在翻译注意事项中明确保留这些源格式覆盖限制
+
+## QA 策略调查模式
+
+当 `mode=qa_policy_proposal` 时，必须读取任务指定的项目文件、现有策略、style guide、note 和术语资料，区分明确要求与模型推断。输出 JSON，不得输出 Markdown：
+
+```json
+{
+  "schema_version": 1,
+  "mode": "qa_policy_proposal",
+  "requirements": [
+    {
+      "rule": "enforce_newline_count",
+      "value": false,
+      "evidence": "项目文件中的原文要求或具体路径",
+      "confidence": "explicit"
+    }
+  ],
+  "validation_policy": {},
+  "qa_policy": {},
+  "unresolved_questions": []
+}
+```
+
+`confidence` 只能是 `explicit`、`inferred` 或 `uncertain`。提案只供主代理展示差异并请求用户确认；不得覆盖 `data/<project-id>/project_rules/` 中的策略快照。
 
 ## 输出要求
 

@@ -1,6 +1,6 @@
 # batch-translate-skill-codex
 
-日→中 批量翻译工作流的 **Codex 适配版**：mqxliff/docx/xlsx/txt → 分批翻译 → 逐批校对 → 写回，全自动循环。
+日→中 批量翻译工作流的 **Codex 适配版**：mqxliff/docx/xlsx/txt → 分批翻译 → 逐批校对 → 程序化 QA → AI QA 复核 → 写回，全自动循环。
 
 Reasonix 版请使用 [batch-translate-skill](https://github.com/xiaoxinblast/batch-translate-skill)；本仓库是 Codex 版（技能目录结构、元数据与工具调用方式均已按 Codex 规范调整）。
 
@@ -15,7 +15,7 @@ python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github
 python ~/.codex/skills/batch-translate/scripts/install_roles.py
 ```
 
-skill 已自带三个子代理角色资源；第二条命令只同步这三个受管角色，不会删除 `~/.codex/agents/` 中的其他文件。
+skill 已自带四个子代理角色资源；第二条命令只同步这四个受管角色，不会删除 `~/.codex/agents/` 中的其他文件。
 
 安装后重启 Codex（或新开对话）即可生效。
 
@@ -47,7 +47,7 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 
 > 开始批量翻译
 
-技能自动完成：安装工具包 → 扫描项目文件 → 编译风格指南/术语库 → 全量语境分析 → 分批翻译 → 逐批校对 → 写回。
+技能自动完成：安装工具包 → 扫描项目文件 → 编译风格指南/术语库 → 全量语境分析 → 分批翻译 → 逐批校对 → 程序化 QA → QA 代理复核 → 写回。
 
 ## 组成
 
@@ -57,12 +57,13 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 | 角色 | `context-analyzer`（`agents/context-analyzer.toml`） | 全量语境分析，识别文档分段与术语缺口 |
 | 角色 | `translator`（`agents/translator.toml`） | 日→中翻译，按风格指南产出自然中文 |
 | 角色 | `trans-reviewer`（`agents/trans-reviewer.toml`） | 硬性错误检查 + 语言润色 |
+| 角色 | `qa-reviewer`（`agents/qa-reviewer.toml`） | 复核程序化 QA finding，修正真错并记录误报 |
 
-> 三个子代理由 Codex 自定义角色（`~/.codex/agents/*.toml`）替代了此前的同名技能，角色文件内含各自的 `developer_instructions` 与模型分工说明。
-> 当前分工为 `context-analyzer = gpt-5.6-luna / max`，翻译与校对为 `gpt-5.6-sol / high`。
+> 四个子代理由 Codex 自定义角色（`~/.codex/agents/*.toml`）替代了此前的同名技能，角色文件内含各自的 `developer_instructions` 与模型分工说明。
+> 当前分工为 `context-analyzer = gpt-5.6-luna / max`、`qa-reviewer = gpt-5.6-luna / max`，翻译与校对为 `gpt-5.6-sol / high`。
 
 ## 兼容性
 
 - Python 3.10+
-- skill workflow protocol 7
-- 工具包 `batch-translate` 7.x；自动更新前会验证 GitHub origin，更新后会验证协议
+- skill workflow protocol 8
+- 工具包 `batch-translate` 8.x；自动更新前会验证 GitHub origin，更新后会验证协议

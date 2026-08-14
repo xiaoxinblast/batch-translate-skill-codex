@@ -14,6 +14,7 @@ MANAGED_ROLES = (
     "context-analyzer.toml",
     "translator.toml",
     "trans-reviewer.toml",
+    "qa-reviewer.toml",
 )
 
 

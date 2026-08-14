@@ -1,4 +1,4 @@
 interface:
   display_name: "批量翻译"
-  short_description: "批量处理日中翻译、语境分析、逐批校对、严格验证与原格式导出"
+  short_description: "批量处理日中翻译、逐批校对、程序化 QA、严格验证与原格式导出"
   default_prompt: "Use $batch-translate to translate the selected Japanese source file into Simplified Chinese."

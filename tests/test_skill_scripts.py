@@ -30,7 +30,7 @@ install_roles = _load("install_roles", SKILL / "scripts" / "install_roles.py")
 
 
 class ToolkitCheckTest(unittest.TestCase):
-    def _toolkit(self, remote: str, protocol: int = 7) -> tuple[tempfile.TemporaryDirectory, Path]:
+    def _toolkit(self, remote: str, protocol: int = 8) -> tuple[tempfile.TemporaryDirectory, Path]:
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
         subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
@@ -41,11 +41,11 @@ class ToolkitCheckTest(unittest.TestCase):
         )
         (root / "batch.py").write_text(
             "import json, sys\n"
-            f"print(json.dumps({{'toolkit_version': '7.0.0', 'workflow_protocol': {protocol}}}))\n",
+            f"print(json.dumps({{'toolkit_version': '8.0.0', 'workflow_protocol': {protocol}}}))\n",
             encoding="utf-8",
         )
         (root / "toolkit_version.py").write_text(
-            "TOOLKIT_VERSION = '7.0.0'\n"
+            "TOOLKIT_VERSION = '8.0.0'\n"
             f"WORKFLOW_PROTOCOL_VERSION = {protocol}\n",
             encoding="utf-8",
         )
@@ -98,8 +98,8 @@ class ToolkitCheckTest(unittest.TestCase):
     def test_rejects_unsupported_toolkit_major(self):
         with self.assertRaisesRegex(RuntimeError, "版本不兼容"):
             check_toolkit.validate_version({
-                "toolkit_version": "8.0.0",
-                "workflow_protocol": 7,
+                "toolkit_version": "7.0.0",
+                "workflow_protocol": 8,
             })
 
     def test_checks_fetched_revision_without_executing_it(self):
@@ -110,7 +110,7 @@ class ToolkitCheckTest(unittest.TestCase):
 
         version = check_toolkit.validate(toolkit, revision="HEAD")
 
-        self.assertEqual(version["workflow_protocol"], 7)
+        self.assertEqual(version["workflow_protocol"], 8)
 
 
 class RoleInstallTest(unittest.TestCase):
@@ -122,6 +122,19 @@ class RoleInstallTest(unittest.TestCase):
             )
             with open(ROOT / "agents" / name, "rb") as role_file:
                 tomllib.load(role_file)
+
+    def test_role_model_assignments_are_explicit(self):
+        expected = {
+            "context-analyzer.toml": ("gpt-5.6-luna", "max"),
+            "translator.toml": ("gpt-5.6-sol", "high"),
+            "trans-reviewer.toml": ("gpt-5.6-sol", "high"),
+            "qa-reviewer.toml": ("gpt-5.6-luna", "max"),
+        }
+        for name, (model, effort) in expected.items():
+            with open(ROOT / "agents" / name, "rb") as role_file:
+                config = tomllib.load(role_file)
+            self.assertEqual(config["model"], model, name)
+            self.assertEqual(config["model_reasoning_effort"], effort, name)
 
     def test_install_preserves_unrelated_roles(self):
         with tempfile.TemporaryDirectory() as temp:
