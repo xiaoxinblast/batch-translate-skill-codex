@@ -1,6 +1,6 @@
 ---
 name: batch-translate
-description: "批量翻译工作流（Codex 适配版 v6）。支持 mqxliff/docx/xlsx/txt → 分批翻译 → 逐批校对 → 写回，全自动循环。混合文件原生支持 + 独立验证脚本 + 绝对路径 + UTF-8 规范；Windows 默认 PowerShell。"
+description: "批量翻译工作流（Codex 适配版 v7）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、语境分片、分批翻译、逐批校对、严格验证和独立文件导出；Windows 默认 PowerShell。"
 ---
 
 # batch-translate — 批量翻译工作流
@@ -18,13 +18,17 @@ description: "批量翻译工作流（Codex 适配版 v6）。支持 mqxliff/doc
 
 > ⚠️ **强制步骤**：每次触发本 skill 必须首先执行，不可跳过。
 
+先运行 `python -c "import sys; assert sys.version_info >= (3, 10), sys.version"`，确认解释器为 Python 3.10 或更高版本；再把 `<skill_dir>` 解析为本 `SKILL.md` 所在目录的绝对路径。工具包必须满足 workflow protocol 7。
+
 ### 情况 A：`batch_translate/` 不存在
 
 Bash：
 
 ```bash
 git clone https://github.com/xiaoxinblast/batch-translate.git batch_translate
+python <skill_dir>/scripts/check_toolkit.py batch_translate
 python -m pip install -r batch_translate/requirements.txt
+python <skill_dir>/scripts/install_roles.py
 mkdir -p batch_translate/data batch_translate/exports
 ```
 
@@ -32,24 +36,27 @@ PowerShell（Windows 默认）：
 
 ```powershell
 git clone https://github.com/xiaoxinblast/batch-translate.git batch_translate
+python <skill_dir>\scripts\check_toolkit.py batch_translate
 python -m pip install -r batch_translate/requirements.txt
+python <skill_dir>\scripts\install_roles.py
 New-Item -ItemType Directory -Force batch_translate\data, batch_translate\exports | Out-Null
 ```
 
-目录结构（按源文件 stem 分组）：
-- `data/<stem>/_working_*, batch_state.json` ← 每个源文件独立
-- `exports/<stem>/_batch_NNN_*.json` ← 每个源文件独立
-- `exports/<stem>/document_summary.md` ← 语境分析 sidecar（状态清理后仍保留）
+目录结构（按安全 project id 分组；同名源文件冲突时自动加路径哈希）：
+- `data/<project-id>/_working_*, batch_state.json, project_identity.json` ← 每个源文件独立
+- `exports/<project-id>/_batch_NNN_*.json` ← 每个源文件独立
+- `exports/<project-id>/document_summary.md` ← 语境分析 sidecar（状态清理后仍保留）
 - `data/tm_memory.json, term_base.xlsx, style_guide.txt` ← 共享
 
-> `batch_state.json` 位于 `data/<stem>/`，**全部批次提交完成后自动清理**；
-> 完成后的收尾命令（`export`/`term-gaps`）依赖 `exports/<stem>/document_summary.md`
+> `batch_state.json` 位于 `data/<project-id>/`，**全部批次提交完成后自动清理**；
+> 完成后的收尾命令（`export`/`term-gaps`）依赖 `exports/<project-id>/document_summary.md`
 > 或批次 JSON，不依赖已清理的状态文件。
 
 ### 情况 B：`batch_translate/` 已存在
 
 **必须检查并尝试快进更新到最新版本**。不得删除目录、不得执行 `git reset --hard`；
-`data/`、`exports/` 和任何本地改动都必须保留。若目录不是 Git 仓库或无法快进，停止并向用户报告。
+`data/`、`exports/` 和任何本地改动都必须保留。更新前必须先校验 `origin` 指向
+`xiaoxinblast/batch-translate`；若目录不是 Git 仓库、远端不受信任、无法快进或更新后协议不兼容，停止并向用户报告。
 
 Bash：
 
@@ -59,12 +66,16 @@ if [ ! -d .git ]; then
   echo "batch_translate 已存在但不是 Git 仓库；为保护数据，停止自动更新" >&2
   exit 1
 else
+  python <skill_dir>/scripts/check_toolkit.py . --remote-only
   git fetch origin
+  python <skill_dir>/scripts/check_toolkit.py . --revision origin/main
   git merge origin/main --ff-only
 fi
 mkdir -p data exports
 python -m pip install -r requirements.txt
 cd ..
+python <skill_dir>/scripts/check_toolkit.py batch_translate
+python <skill_dir>/scripts/install_roles.py
 ```
 
 PowerShell（Windows 默认）：
@@ -74,13 +85,17 @@ Set-Location batch_translate
 if (-not (Test-Path .git)) {
   throw "batch_translate 已存在但不是 Git 仓库；为保护数据，停止自动更新"
 } else {
+  python <skill_dir>\scripts\check_toolkit.py . --remote-only
   git fetch origin
+  python <skill_dir>\scripts\check_toolkit.py . --revision origin/main
   git merge origin/main --ff-only
   if ($LASTEXITCODE -ne 0) { throw "batch_translate 无法快进更新，请先处理本地改动或分叉" }
 }
 New-Item -ItemType Directory -Force data, exports | Out-Null
 python -m pip install -r requirements.txt
 Set-Location ..
+python <skill_dir>\scripts\check_toolkit.py batch_translate
+python <skill_dir>\scripts\install_roles.py
 ```
 
 确认 `batch.py` 可执行且依赖已安装后，进入阶段〇.五。
@@ -125,7 +140,7 @@ ls -la
 
 ## 阶段一：项目初始化
 
-若 `batch_translate/data/<stem>/batch_state.json` 不存在，则尚未初始化。
+若目标 project id 下没有 `batch_state.json`，则尚未初始化。不要仅凭源文件 stem 判断；同名源文件可能对应不同 project id。
 
 ### 1. 生成风格指南 → `batch_translate/data/style_guide.txt`
 
@@ -149,7 +164,7 @@ ls -la
 
 ### 4. 运行 init
 
-`init` 只读取用户指定的源文件，并在 `batch_translate/data/<stem>/` 创建受管工作副本；
+`init` 只读取用户指定的源文件，并在 `batch_translate/data/<project-id>/` 创建受管工作副本；
 后续提交只修改工作副本和工作 JSON，绝不写回用户源文件。
 
 ```bash
@@ -170,6 +185,7 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 
 - xlsx/xlsm：`--source-col C --target-col D --header-row 3 --sheet <名称>`；`--sheet "*"` 处理全部工作表。
 - 项目校验策略：`--validation-policy <validation_policy.json>`。仅用它声明项目允许的例外，不得修改通用校验器硬编码项目规则。
+- 项目选择：`--project <project-id>` 可显式命名；省略时优先使用 stem，同名冲突自动附加路径哈希。重复初始化现有状态会被拒绝，确需重建时显式使用 `--force-reinit`。
 
 ### 4.5. 模式判定
 
@@ -184,15 +200,25 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 
 > ⚠️ **强制步骤**。
 
-启动 `context-analyzer` 子代理角色（角色文件：`~/.codex/agents/context-analyzer.toml`）。
-分析员必须把完整报告写入任务指定的文件（如 `_temp/context_analysis_<stem>.md`），回复只留摘要。
+先生成语境分析分片清单：
+
+```powershell
+python batch_translate/batch.py context-split --max-chars 60000 --project <project-id>
+```
+
+读取 `exports/<project-id>/context_parts/context_manifest.json`：
+
+- `total_parts=1`：启动一次 `context-analyzer`，直接读取完整 `_working.json`。
+- `total_parts>1`：每片分别启动 `context-analyzer`，输入对应 `context_part_NNN.json`，报告写到项目 `_temp/`；全部完成后运行 `context-pack <报告...> --project <project-id>`，再让一个 `context-analyzer` 读取生成的 `context_merge_task.json`，综合为最终全局报告。
+
+分析员必须把最终完整报告写入任务指定的文件（如 `_temp/context_analysis_<project-id>.md`），回复只留摘要。
 返回后确认报告文件完整，然后写入状态并保留 sidecar：
 
 ```powershell
-python batch_translate/batch.py summary _temp/context_analysis_<stem>.md
+python batch_translate/batch.py summary _temp/context_analysis_<project-id>.md --project <project-id>
 ```
 
-该命令同时写入 `batch_state.json` 的 `document_summary` 与 `exports/<stem>/document_summary.md`。
+该命令同时写入 `batch_state.json` 的 `document_summary` 与 `exports/<project-id>/document_summary.md`。
 
 ### 6. 术语缺口核查（只读）
 
@@ -200,11 +226,11 @@ python batch_translate/batch.py summary _temp/context_analysis_<stem>.md
 
 ### 7. 续跑/复跑（可选）
 
-已完成或中断的批次，可用 `init --resume <已交付/<stem>.mqxliff>` 或 `data/<stem>/_working_<stem>.mqxliff` 重新初始化：
+已完成或中断的批次，可用 `init --resume <已交付/源文件名.mqxliff>` 或 `data/<project-id>/_working_*.mqxliff` 重新初始化：
 
 - 状态文件已存在 → 不覆盖，直接运行 `next` 继续
 - 状态已清理 → 从带译文文件重新初始化，已有译文自动锁定
-- 若 `exports/<stem>/document_summary.md` 已存在，跳过本阶段第 5 步（语境分析 + summary），直接进入阶段二
+- 若 `exports/<project-id>/document_summary.md` 已存在，跳过本阶段第 5 步（语境分析 + summary），直接进入阶段二
 
 ## 阶段二：自动循环
 
@@ -224,7 +250,7 @@ python batch_translate/batch.py next --review  # 全译文文件（跳过翻译�
 - source_locked=true 的条目：源文件自身锁定，保留 target 不变，**即使 target 为空也严禁填充或改动**
 - source_locked 缺失且 locked=true 的条目：混合模式的已有译文，保留已填 target 不变
 - locked=false 的条目：从零翻译
-- 带 `maxlengthchars` 的条目：译文长度不得超过该值
+- 每条 `validation` 是该条最终生效的标签、长度、换行和空译文规则；角色必须逐条遵守，不得用通用默认覆盖项目策略
 
 ### Step 3: 生成校对文件（仅 translate 模式）
 
@@ -245,7 +271,7 @@ python batch_translate/batch.py review _batch_NNN_translated.json
 ### Step 4.5: 机制化验证校对 JSON
 
 ```bash
-python batch_translate/scripts/verify_batch.py --stem <stem>
+python batch_translate/scripts/verify_batch.py --stem <project-id>
 ```
 
 > 脚本内置 UTF-8 输出，无 GBK 编码问题；可连续调用不会被 loop guard 拦截。
@@ -253,7 +279,7 @@ python batch_translate/scripts/verify_batch.py --stem <stem>
 **分级处理**：
 - `RESULT: PASS (...)` exit 0 → 进入 Step 5
 - `FATAL:` 非 0 退出码 → 退回 Step 4 重跑
-- `WARNING:` + `PASS with warnings` → 退回 Step 4 修正后重跑；仅当项目规则明确允许时才可加 `--allow-warnings` 放行，并在最终回复中记录原因
+- `WARNING:` + `RESULT: BLOCKED`（exit 3）→ 退回 Step 4 修正后重跑；仅当项目规则明确允许时才可同时加 `--allow-warnings --warning-reason "<具体原因>"` 放行
 
 默认校验要求：批次 id 集合精确一致、id/target 类型正确、非锁定项 target 非空、locked target 原样保留；仅 source_locked=true 的空 target 可直接通过、
 除 `br` 外的标签序列精确一致、无裸标签、满足 `maxlengthchars`。默认不强制换行数量一致；项目若需更严格或确有例外，
@@ -267,6 +293,7 @@ python batch_translate/batch.py submit _batch_NNN_reviewed.json
 
 submit 先完整校验，再以事务方式执行 write + TM 积累 + 重新 parse + 状态推进。
 任一步失败都会回滚工作文件、工作 JSON、TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
+submit 遇到 warning 时默认阻断；若明确授权，必须同时传 `--allow-warnings --warning-reason "<具体原因>"`，理由和 warning 会写入 state，并在完成后保留到 manifest。
 
 ### 完成
 
@@ -276,7 +303,7 @@ submit 先完整校验，再以事务方式执行 write + TM 积累 + 重新 par
 # 按原格式导出最终译文（默认写入项目 已交付/<原文件名>；已存在需 --force）
 python batch_translate/batch.py export
 
-# 生成术语缺口待确认清单（默认 _temp/term_gaps_<stem>.md）
+# 生成术语缺口待确认清单（默认 _temp/term_gaps_<project-id>.md）
 python batch_translate/batch.py term-gaps
 ```
 
@@ -300,7 +327,7 @@ python batch_translate/batch.py term-gaps
 
 三个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
 
-- `context-analyzer.toml`：`gpt-5.6-terra` + `high`，用于高吞吐的全量语境扫描
+- `context-analyzer.toml`：`gpt-5.6-luna` + `max`，用于全量或分片语境扫描
 - `translator.toml`：`gpt-5.6-sol` + `high`，用于逐条翻译
 - `trans-reviewer.toml`：`gpt-5.6-sol` + `high`，用于逐条校对
 - **临时文件纪律**：子代理如需辅助脚本/中间文件，一律放项目 `_temp/` 或 `_temp_scripts/`，用后删除；禁止在 `batch_translate/`（data、exports 为受管目录）内创建文件。

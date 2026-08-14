@@ -12,15 +12,10 @@ Reasonix 版请使用 [batch-translate-skill](https://github.com/xiaoxinblast/ba
 python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
   --repo xiaoxinblast/batch-translate-skill-codex \
   --path batch-translate
+python ~/.codex/skills/batch-translate/scripts/install_roles.py
 ```
 
-然后安装三个子代理角色（个人级）：
-
-```powershell
-$dst = "$HOME\.codex\agents"
-New-Item -ItemType Directory -Force -Path $dst | Out-Null
-Copy-Item -Force agents\*.toml -Destination $dst
-```
+skill 已自带三个子代理角色资源；第二条命令只同步这三个受管角色，不会删除 `~/.codex/agents/` 中的其他文件。
 
 安装后重启 Codex（或新开对话）即可生效。
 
@@ -33,7 +28,7 @@ $skills = "$HOME\.codex\skills"
 $agents = "$HOME\.codex\agents"
 New-Item -ItemType Directory -Force -Path $agents | Out-Null
 Copy-Item -Recurse -Force batch-translate -Destination $skills
-Copy-Item -Force agents\*.toml -Destination $agents
+python "$skills\batch-translate\scripts\install_roles.py" --destination $agents
 ```
 
 ## 工具包
@@ -64,3 +59,10 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 | 角色 | `trans-reviewer`（`agents/trans-reviewer.toml`） | 硬性错误检查 + 语言润色 |
 
 > 三个子代理由 Codex 自定义角色（`~/.codex/agents/*.toml`）替代了此前的同名技能，角色文件内含各自的 `developer_instructions` 与模型分工说明。
+> 当前分工为 `context-analyzer = gpt-5.6-luna / max`，翻译与校对为 `gpt-5.6-sol / high`。
+
+## 兼容性
+
+- Python 3.10+
+- skill workflow protocol 7
+- 工具包 `batch-translate` 7.x；自动更新前会验证 GitHub origin，更新后会验证协议
