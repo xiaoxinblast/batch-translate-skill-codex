@@ -48,20 +48,22 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 
 ### 情况 B：`batch_translate/` 已存在
 
-**必须检查并更新到最新版本**：
+**必须检查并尝试快进更新到最新版本**。不得删除目录、不得执行 `git reset --hard`；
+`data/`、`exports/` 和任何本地改动都必须保留。若目录不是 Git 仓库或无法快进，停止并向用户报告。
 
 Bash：
 
 ```bash
 cd batch_translate
 if [ ! -d .git ]; then
-  cd .. && rm -rf batch_translate
-  git clone https://github.com/xiaoxinblast/batch-translate.git batch_translate
-  python -m pip install -r batch_translate/requirements.txt
+  echo "batch_translate 已存在但不是 Git 仓库；为保护数据，停止自动更新" >&2
+  exit 1
 else
-  git fetch origin && git merge origin/main --ff-only 2>/dev/null || git reset --hard origin/main
+  git fetch origin
+  git merge origin/main --ff-only
 fi
 mkdir -p data exports
+python -m pip install -r requirements.txt
 cd ..
 ```
 
@@ -70,16 +72,14 @@ PowerShell（Windows 默认）：
 ```powershell
 Set-Location batch_translate
 if (-not (Test-Path .git)) {
-  Set-Location ..
-  Remove-Item -Recurse -Force batch_translate
-  git clone https://github.com/xiaoxinblast/batch-translate.git batch_translate
-  python -m pip install -r batch_translate/requirements.txt
+  throw "batch_translate 已存在但不是 Git 仓库；为保护数据，停止自动更新"
 } else {
   git fetch origin
   git merge origin/main --ff-only
-  if ($LASTEXITCODE -ne 0) { git reset --hard origin/main }
+  if ($LASTEXITCODE -ne 0) { throw "batch_translate 无法快进更新，请先处理本地改动或分叉" }
 }
 New-Item -ItemType Directory -Force data, exports | Out-Null
+python -m pip install -r requirements.txt
 Set-Location ..
 ```
 
@@ -149,6 +149,9 @@ ls -la
 
 ### 4. 运行 init
 
+`init` 只读取用户指定的源文件，并在 `batch_translate/data/<stem>/` 创建受管工作副本；
+后续提交只修改工作副本和工作 JSON，绝不写回用户源文件。
+
 ```bash
 python batch_translate/batch.py init <源文件> \
   --batch-chars 3000 --context-size 5 \
@@ -163,6 +166,11 @@ PowerShell（Windows 默认，单行写法）：
 python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-size 5 --terms batch_translate/data/term_base.xlsx --tm batch_translate/data/tm_memory.json --style-guide batch_translate/data/style_guide.txt
 ```
 
+可选参数：
+
+- xlsx/xlsm：`--source-col C --target-col D --header-row 3 --sheet <名称>`；`--sheet "*"` 处理全部工作表。
+- 项目校验策略：`--validation-policy <validation_policy.json>`。仅用它声明项目允许的例外，不得修改通用校验器硬编码项目规则。
+
 ### 4.5. 模式判定
 
 > ⚠️ **强制步骤**。init 已自动检测并打印（如 `🔀 混合文件: 511/1491 条已有译文`）。
@@ -170,7 +178,7 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 - **全部有译文 = 总数** → `batch.py next --review`（跳过翻译，直接校对）
 - **混合 / 全部无译文** → `batch.py next`（translate 模式自动锁定已有译文，只翻译空条目）
 
-> `batch.py next` 会自动从 `_working.json` 中检测已有 `target`，注入为 `locked=true`。无需外部手动脚本。
+> 混合模式中，`batch.py next` 会自动为已有 `target` 的条目注入 `locked=true`，防止翻译代理改写既有译文。源文件自身锁定的条目另带 `source_locked=true`，并同样标记 `locked=true`；其 target 可以为空且必须原样保留。无需外部手动脚本。
 
 ### 5. 全量语境分析
 
@@ -213,8 +221,10 @@ python batch_translate/batch.py next --review  # 全译文文件（跳过翻译�
 
 启动 `translator` 子代理角色（角色文件：`~/.codex/agents/translator.toml`）。任务参数中必须使用**绝对路径**指定输入输出文件（从 `batch_state.json` 的 `stem` 推导）。
 
-- locked=true 的条目：保留 target 不变，**严禁对译文进行任何改动**（这些是100%匹配的已交付译文）
+- source_locked=true 的条目：源文件自身锁定，保留 target 不变，**即使 target 为空也严禁填充或改动**
+- source_locked 缺失且 locked=true 的条目：混合模式的已有译文，保留已填 target 不变
 - locked=false 的条目：从零翻译
+- 带 `maxlengthchars` 的条目：译文长度不得超过该值
 
 ### Step 3: 生成校对文件（仅 translate 模式）
 
@@ -226,7 +236,7 @@ python batch_translate/batch.py review _batch_NNN_translated.json
 
 启动 `trans-reviewer` 子代理角色（角色文件：`~/.codex/agents/trans-reviewer.toml`）。任务参数中必须使用**绝对路径**。
 
-> locked=true 的条目**严禁修改**——校对时同样遵循此规则。
+> source_locked=true 的条目**严禁修改**；混合模式的 locked=true 既有译文在翻译→校对链路中同样严禁修改。`next --review` 的普通已有译文为 locked=false，应正常校对。
 
 > ⚠️ **落盘检查（强制）**：校对员返回后，确认 `_batch_NNN_reviewed.json` **已实际写入且内容符合要求**：
 > 文件存在且非空、mtime 已更新、条目数 = N、id 全覆盖、locked 条目未改动、follow-up 指定的 id 已生效。
@@ -243,7 +253,11 @@ python batch_translate/scripts/verify_batch.py --stem <stem>
 **分级处理**：
 - `RESULT: PASS (...)` exit 0 → 进入 Step 5
 - `FATAL:` 非 0 退出码 → 退回 Step 4 重跑
-- `WARNING:` + `PASS with warnings` → 退回 Step 4 修正后重跑；若警告为已验证的规则豁免（如占位符/actor 条目）或经人工判定可接受，可加 `--allow-warnings` 放行，并在最终回复中记录原因
+- `WARNING:` + `PASS with warnings` → 退回 Step 4 修正后重跑；仅当项目规则明确允许时才可加 `--allow-warnings` 放行，并在最终回复中记录原因
+
+默认校验要求：批次 id 集合精确一致、id/target 类型正确、非锁定项 target 非空、locked target 原样保留；仅 source_locked=true 的空 target 可直接通过、
+除 `br` 外的标签序列精确一致、无裸标签、满足 `maxlengthchars`。默认不强制换行数量一致；项目若需更严格或确有例外，
+通过 `validation_policy.json` 统一配置，Step 4.5 与 submit 使用同一策略。
 
 ### Step 5: 提交并推进
 
@@ -251,19 +265,23 @@ python batch_translate/scripts/verify_batch.py --stem <stem>
 python batch_translate/batch.py submit _batch_NNN_reviewed.json
 ```
 
-submit 内部自动执行 write + TM 积累 + 重新 parse + 生成下一批 JSON（自动注入 locked 条目）。提交后回到 Step 1。
+submit 先完整校验，再以事务方式执行 write + TM 积累 + 重新 parse + 状态推进。
+任一步失败都会回滚工作文件、工作 JSON、TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
 
 ### 完成
 
 全部批次完成后，`batch.py submit` 自动清理状态文件。随后执行收尾并告知用户完成：
 
 ```powershell
-# 导出最终译文 mqxliff（默认复制到项目 已交付/<stem>.mqxliff；已存在需 --force）
+# 按原格式导出最终译文（默认写入项目 已交付/<原文件名>；已存在需 --force）
 python batch_translate/batch.py export
 
 # 生成术语缺口待确认清单（默认 _temp/term_gaps_<stem>.md）
 python batch_translate/batch.py term-gaps
 ```
+
+`export` 支持 mqxliff/docx/xlsx/xlsm/txt，并先写候选文件、重新解析校验，再原子放入交付路径。
+导出目标必须是新文件；即使使用 `--force`，也拒绝覆盖用户源文件或受管工作副本。
 
 ## Shell 命令规范
 
@@ -275,16 +293,14 @@ python batch_translate/batch.py term-gaps
 ## 常见坑（通用）
 
 - **XML 实体**：译文正文里的 `&`、`<` 等字符由工具在写回时自动转义（lxml 序列化），不要手写 `&amp;`；也不要改动 `<tag .../>` 标签标记。
-- **占位符标签条目**（如 `<actor>`）：正文是否省略、只保留占位符，以项目 style_guide/instructions/note 为准；验证脚本对占位符条目豁免标签数严格比对，但仍要求占位符标签本身存在。
+- **项目特例**：占位符、换行、空译文或标签差异是否允许，以项目 style_guide/instructions/note 和 `validation_policy.json` 为准；不得在通用 Skill、角色或校验代码中硬编码某个项目的标签名。
 - **Windows 控制台 GBK 乱码**：脚本已内置 UTF-8 输出；如仍乱码，可先执行 `chcp 65001` 或设置 `$env:PYTHONIOENCODING='utf-8'`。
 
 ## 子代理角色（Codex）
 
 三个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
 
-- `context-analyzer.toml`：指定 `deepseek-v4-flash` + `max` 思考强度，快速全量语境分析
-- `translator.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
-- `trans-reviewer.toml`：不指定 model（继承主模型），`max` 思考强度，文件内保留原 pro 分工说明与启用注释
+- `context-analyzer.toml`：`gpt-5.6-terra` + `high`，用于高吞吐的全量语境扫描
+- `translator.toml`：`gpt-5.6-sol` + `high`，用于逐条翻译
+- `trans-reviewer.toml`：`gpt-5.6-sol` + `high`，用于逐条校对
 - **临时文件纪律**：子代理如需辅助脚本/中间文件，一律放项目 `_temp/` 或 `_temp_scripts/`，用后删除；禁止在 `batch_translate/`（data、exports 为受管目录）内创建文件。
-
-DeepSeek Responses API 目前仅支持 `deepseek-v4-flash`；待支持 pro 后可按角色文件内注释启用。
