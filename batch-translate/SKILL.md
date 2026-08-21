@@ -123,8 +123,8 @@ ls -la
 
 列出所有找到的文件，标注大小，**同时检查 `batch_translate/data/` 下是否已有编译版**。
 
-**优先级判断原则**：
-- `batch_translate/data/` 下的已有编译版优先于项目原始文档
+**候选排序原则（仅供展示，不代表自动选择）**：
+- `batch_translate/data/` 下的已有编译版与项目原始文档必须同时展示；编译版不得因存在而自动胜出
 - 根目录文件优先于子目录文件
 - 行数/大小大的优先于小的
 - `.xlsx` 多 sheet 优先于单 sheet
@@ -134,21 +134,23 @@ ls -la
 
 > ⚠️ **强制步骤**：扫描后、生成任何文件前，必须询问用户。
 > 
-> **例外**：若用户触发本 skill 时已明确指定术语库/TM/风格指南来源，跳过 ask 直接使用用户指定值。
+> **例外**：仅当用户在当前请求中同时明确指定风格指南、术语库、永久 TM、验证策略和 QA 策略时，才可跳过逐项追问；仍须回显所选路径与 SHA-256 后继续。
 
-向用户展示扫描结果，然后直接向用户提问（可多选），依次询问风格指南、术语库、翻译记忆来源。
+向用户展示原始资料与编译版的路径、大小、修改时间、SHA-256，然后逐项确认：风格指南、术语库、永久 TM、验证策略、QA 策略。已存在的策略快照也必须展示“保留 / 替换 / 禁用”选项，不得静默沿用。
+
+用户确认后，将五类选择及其 SHA-256 写入 `_temp/reference_selection_<project-id>.json`，并在 init 中传入 `--reference-selection` 与 `--require-agent-receipts`。未确认不得生成编译物、不得 init、不得启动子代理。
 
 > ⚠️ 若用户选择"从源文件导入已有译文"，必须提醒：
 > "源文件中已有的译文可能已过时。导入后需逐条核对。"
 
-### 5. 项目规则调查（建议执行）
+### 5. 项目规则调查（强制确认）
 
 若未发现项目已有的 `validation_policy.json` 或 `qa_policy.json`，启动 `context-analyzer` 的 `mode=qa_policy_proposal`，读取项目说明、style guide、note、术语和源文件，生成 `_temp/qa_policy_proposal_<project-id>.json`。
 
 - 只把 `explicit` 要求列为可执行候选；`inferred`/`uncertain` 只展示，不自动启用。
 - 向用户展示候选规则与证据，用户确认后才写入项目策略快照。
 - 未确认的候选不改变默认策略；不得因为单条译文自动放宽全项目校验。
-- 已有项目策略时优先使用快照，不重复覆盖；只有用户明确要求重新调查才重新生成提案。
+- 已有项目策略时仍须向用户展示生效规则与快照来源；用户确认“保留”后才可使用，用户选择“替换”时重新生成提案。
 
 ## 阶段一：项目初始化
 
@@ -184,13 +186,15 @@ python batch_translate/batch.py init <源文件> \
   --batch-chars 3000 --context-size 5 \
   --terms batch_translate/data/term_base.xlsx \
   --tm-permanent batch_translate/data/tm_memory.json \
-  --style-guide batch_translate/data/style_guide.txt
+  --style-guide batch_translate/data/style_guide.txt \
+  --reference-selection _temp/reference_selection_<project-id>.json \
+  --require-agent-receipts
 ```
 
 PowerShell（Windows 默认，单行写法）：
 
 ```powershell
-python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-size 5 --terms batch_translate/data/term_base.xlsx --tm-permanent batch_translate/data/tm_memory.json --style-guide batch_translate/data/style_guide.txt
+python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-size 5 --terms batch_translate/data/term_base.xlsx --tm-permanent batch_translate/data/tm_memory.json --style-guide batch_translate/data/style_guide.txt --reference-selection _temp/reference_selection_<project-id>.json --require-agent-receipts
 ```
 
 可选参数：
@@ -200,6 +204,7 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 - 项目 QA 策略：`--qa-policy <qa_policy.json>`。初始化后会复制为 `data/<project-id>/project_rules/qa_policy.json` 快照。
 - 永久 TM：`--tm-permanent <tm.json>`；旧参数 `--tm <tm.json>` 仍作为只读永久 TM 别名保留。可选 `--tm-runtime-dir <目录>` 覆盖默认的 `data/<project-id>/tm_runtime/`。
 - 项目选择：`--project <project-id>` 可显式命名；省略时优先使用 stem，同名冲突自动附加路径哈希。重复初始化现有状态会被拒绝，确需重建时显式使用 `--force-reinit`。
+- 工作流模式必须传 `--reference-selection` 与 `--require-agent-receipts`；前者的五类路径与 SHA-256 必须与 init 参数一致，后者要求每个子代理阶段有可核验 receipt。
 
 ### 4.5. 模式判定
 
@@ -208,7 +213,7 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 - **全部有译文 = 总数** → `batch.py next --review`（跳过翻译，直接校对）
 - **混合 / 全部无译文** → `batch.py next`（translate 模式自动锁定已有译文，只翻译空条目）
 
-> 混合模式中，`batch.py next` 会自动为已有 `target` 的条目注入 `locked=true`，防止翻译代理改写既有译文。源文件自身锁定的条目另带 `source_locked=true`，并同样标记 `locked=true`；其 target 可以为空且必须原样保留。无需外部手动脚本。
+> 混合模式中，`batch.py next` 会为已有 `target` 注入 `preserve_existing=true` 和 `locked=true`。它们是只读基线：仅验证代理结果逐字符相同，随后跳过标签、换行、长度和可修改型 QA；提交、TM 与导出均不重写这些 ID。源文件锁定条目同样为只读基线，即使 target 为空也保持原样。
 
 ### 5. 全量语境分析
 
@@ -217,18 +222,19 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 先生成语境分析分片清单：
 
 ```powershell
-python batch_translate/batch.py context-split --max-chars 60000 --project <project-id>
+python batch_translate/batch.py context-split --max-chars 45000 --project <project-id>
 ```
 
 读取 `exports/<project-id>/context_parts/context_manifest.json`：
 
-- `total_parts=1`：启动一次 `context-analyzer`，直接读取完整 `_working.json`。
+- `total_parts=1`：启动一次 `context-analyzer`，读取裁剪后的 `context_part_001.json`。
 - `total_parts>1`：每片分别启动 `context-analyzer`，输入对应 `context_part_NNN.json`，报告写到项目 `_temp/`；全部完成后运行 `context-pack <报告...> --project <project-id>`，再让一个 `context-analyzer` 读取生成的 `context_merge_task.json`，综合为最终全局报告。
 
-分析员必须把最终完整报告写入任务指定的文件（如 `_temp/context_analysis_<project-id>.md`），回复只留摘要。
+分析员必须把最终紧凑报告写入任务指定的文件（如 `_temp/context_analysis_<project-id>.md`），默认上限 5500 字符；回复只留摘要。
 返回后确认报告文件完整，然后写入状态并保留 sidecar：
 
 ```powershell
+python batch_translate/batch.py receipt context-analyzer --agent-id <agent-id> --role-config ~/.codex/agents/context-analyzer.toml --input <context-task.json> --output _temp/context_analysis_<project-id>.md --project <project-id>
 python batch_translate/batch.py summary _temp/context_analysis_<project-id>.md --project <project-id>
 ```
 
@@ -265,9 +271,15 @@ python batch_translate/batch.py next --review  # 全译文文件（跳过翻译�
 启动 `translator` 子代理角色（角色文件：`~/.codex/agents/translator.toml`）。任务参数中必须使用**绝对路径**指定输入输出文件（从 `batch_state.json` 的 `stem` 推导）。
 
 - source_locked=true 的条目：源文件自身锁定，保留 target 不变，**即使 target 为空也严禁填充或改动**
-- source_locked 缺失且 locked=true 的条目：混合模式的已有译文，保留已填 target 不变
+- preserve_existing=true 的条目：混合模式的已有译文，逐字符保留 target；不得补齐、删除或重排标签、换行或空格
 - locked=false 的条目：从零翻译
 - 每条 `validation` 是该条最终生效的标签、长度、换行和空译文规则；角色必须逐条遵守，不得用通用默认覆盖项目策略
+
+翻译输出落盘后，主代理必须实际启动 `translator` 角色，并记录 receipt；缺 receipt、配置哈希不符或输出哈希变化时不得运行 `review`：
+
+```powershell
+python batch_translate/batch.py receipt translator --agent-id <agent-id> --role-config $HOME\.codex\agents\translator.toml --input <to_translate.json> --output <translated.json> --project <project-id>
+```
 
 ### Step 3: 生成校对文件（仅 translate 模式）
 
@@ -279,11 +291,13 @@ python batch_translate/batch.py review _batch_NNN_translated.json
 
 启动 `trans-reviewer` 子代理角色（角色文件：`~/.codex/agents/trans-reviewer.toml`）。任务参数中必须使用**绝对路径**。
 
-> source_locked=true 的条目**严禁修改**；混合模式的 locked=true 既有译文在翻译→校对链路中同样严禁修改。`next --review` 的普通已有译文为 locked=false，应正常校对。
+> source_locked=true 或 preserve_existing=true 的条目**严禁修改**；混合模式的既有译文在翻译→校对链路中同样严禁修改。`next --review` 的普通已有译文为 locked=false，应正常校对。
 
 > ⚠️ **落盘检查（强制）**：校对员返回后，确认 `_batch_NNN_reviewed.json` **已实际写入且内容符合要求**：
 > 文件存在且非空、mtime 已更新、条目数 = N、id 全覆盖、locked 条目未改动、follow-up 指定的 id 已生效。
 > 不满足则退回 Step 4 重跑，或由根代理机械修正后复验，再进入 Step 4.5。
+
+校对输出落盘后，主代理必须实际启动 `trans-reviewer` 角色并记录同样的 receipt；无 receipt 时 `qa` 会拒绝推进。
 
 ### Step 4.5: 机制化验证校对 JSON
 
@@ -298,9 +312,11 @@ python batch_translate/scripts/verify_batch.py --stem <project-id>
 - `FATAL:` 非 0 退出码 → 退回 Step 4 重跑
 - `WARNING:` + `RESULT: BLOCKED`（exit 3）→ 退回 Step 4 修正后重跑；仅当项目规则明确允许时才可同时加 `--allow-warnings --warning-reason "<具体原因>"` 放行，再进入 Step 4.6
 
-默认校验要求：批次 id 集合精确一致、id/target 类型正确、非锁定项 target 非空、locked target 原样保留；仅 source_locked=true 的空 target 可直接通过、
+默认校验要求：批次 id 集合精确一致、id/target 类型正确、非保留项 target 非空；`preserve_existing`/`source_locked` 仅检查逐字符未变，随后不做标签、换行、长度或可修改型 QA。新译条目仍要求
 除 `br` 外的标签序列精确一致、无裸标签、满足 `maxlengthchars`。默认不强制换行数量一致；项目若需更严格或确有例外，
 通过 `validation_policy.json` 统一配置，Step 4.5 与 submit 使用同一策略。
+
+既有译文的格式风险使用只读审计，不得作为阻断理由：`python batch_translate/batch.py tag-audit --project <project-id>`。
 
 ### Step 4.6: 程序化 QA
 
@@ -314,7 +330,7 @@ python batch_translate/batch.py qa --project <project-id>
 exports/<project-id>/_batch_NNN_qa_task.json
 ```
 
-默认 QA 包括精确 TM 译文不一致、占位符/转义序列、数字、URL/邮箱、空格、括号、疑似未翻译、长度比例、术语一致性和重复译法；换行数量检查默认关闭，可在项目 `qa_policy.json` 中显式启用。精确 TM 检查先使用永久 TM；只有永久层没有精确匹配时才使用运行期 TM，永久与运行期译文冲突时以永久层为准。locked=true/source_locked=true 条目跳过可修改型 QA。
+默认 QA 包括精确 TM 译文不一致、占位符/转义序列、数字、URL/邮箱、空格、括号、疑似未翻译、长度比例、术语一致性和重复译法；换行数量检查默认关闭，可在项目 `qa_policy.json` 中显式启用。精确 TM 检查先使用永久 TM；只有永久层没有精确匹配时才使用运行期 TM，永久与运行期译文冲突时以永久层为准。preserve_existing/locked/source_locked 条目跳过可修改型 QA。
 
 - 无 finding：QA 状态标记为 `clean`，直接进入 Step 5 提交。
 - 有 finding：启动 `qa-reviewer`，不得直接 submit。
@@ -330,7 +346,7 @@ _batch_NNN_qa_report.json
 
 QA task 中的 `qa_reviewed_path` 与 `qa_report_path` 是本批唯一有效的绝对输出路径；`qa-submit` 会拒绝路径不一致的文件。
 
-报告必须逐条给出 `fixed` 或 `false_positive` 及理由；遗漏、重复、`unresolved` 或修改锁定条目都必须退回重跑。返回后检查两个文件存在、非空、ID 全覆盖、locked 条目未改变。
+报告必须逐条给出 `fixed` 或 `false_positive` 及理由；遗漏、重复、`unresolved` 或修改锁定条目都必须退回重跑。返回后检查两个文件存在、非空、ID 全覆盖、locked 条目未改变，并记录 `qa-reviewer` receipt。
 
 ### Step 4.8: 提交 QA 结果
 
@@ -346,7 +362,7 @@ python batch_translate/batch.py submit _batch_NNN_reviewed.json
 ```
 
 submit 先完整校验，再以事务方式执行 write + 当前批运行期 TM 写入 + 重新 parse + 状态推进。
-永久 TM 始终只读；成功提交会生成 `data/<project-id>/tm_runtime/_batch_NNN.json`，只包含当前批已确认译文，不会与永久 TM 合并。任一步失败都会回滚工作文件、工作 JSON、当前批运行期 TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
+永久 TM 始终只读；成功提交会生成 `data/<project-id>/tm_runtime/_batch_NNN.json`，只包含当前批新增或实际修改译文，不会与永久 TM 合并。MQXLIFF 最终导出直接复制已提交工作副本，preserved target 不会再次重建。任一步失败都会回滚工作文件、工作 JSON、当前批运行期 TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
 submit 遇到 warning 时默认阻断；若明确授权，必须同时传 `--allow-warnings --warning-reason "<具体原因>"`，理由和 warning 会写入 state，并在完成后保留到 manifest。
 
 ### 完成
@@ -384,7 +400,9 @@ python batch_translate/batch.py term-gaps
 四个子代理已从技能改为 Codex 自定义角色，角色文件位于 `~/.codex/agents/`（个人级）：
 
 - `context-analyzer.toml`：`gpt-5.6-luna` + `max`，用于全量或分片语境扫描
-- `translator.toml`：`gpt-5.6-sol` + `high`，用于逐条翻译
-- `trans-reviewer.toml`：`gpt-5.6-sol` + `high`，用于逐条校对
+- `translator.toml`：`gpt-5.6-terra` + `max`，用于逐条翻译
+- `trans-reviewer.toml`：`gpt-5.6-terra` + `max`，用于逐条校对
 - `qa-reviewer.toml`：`gpt-5.6-luna` + `max`，用于复核程序化 QA finding
+- 调用时必须使用对应 Codex 自定义角色，记录实际 agent id；不得用根代理生成结果替代角色输出。
+- `receipt` 会核对角色名、模型与 reasoning effort；配置不符合上述契约时，后续阶段不得推进。
 - **临时文件纪律**：子代理如需辅助脚本/中间文件，一律放项目 `_temp/` 或 `_temp_scripts/`，用后删除；禁止在 `batch_translate/`（data、exports 为受管目录）内创建文件。

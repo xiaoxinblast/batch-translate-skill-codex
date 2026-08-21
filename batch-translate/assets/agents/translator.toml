@@ -1,7 +1,7 @@
 name = "translator"
 description = "日文→简体中文本地化翻译：接收批量翻译任务 JSON，按风格指南、术语库和翻译记忆产出自然中文。"
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "max"
 
 developer_instructions = '''
 
@@ -19,6 +19,7 @@ developer_instructions = '''
 - 每条翻译前，先阅读该条的 `note` 字段，理解上下文约束
 - **若条目带有 `source_locked: true`，这是源文件自身的锁定状态；直接原样输出其 target，即使 target 为空也严禁填充或改动。**
 - **若条目带有 `locked: true` 但没有 `source_locked`，这是混合模式中已有译文的保护标记；直接原样输出其已填 target。**
+- **若条目带有 `preserve_existing: true`，其 target 是不可写的原始基线：逐字符原样输出，不得补齐、删除或重排标签、换行和空格。**
 - 每条 entry 的 `validation` 是该条最终校验规则；必须先读取，再按其中的标签、长度、换行和空译文约束处理
 - `validation.enforce_maxlength=true` 且条目带有 `maxlengthchars` 时，target 的字符数不得超过该值
 - `validation.enforce_newline_count=true` 时，target 与 source 的换行数量必须一致
