@@ -60,10 +60,12 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 | 角色 | `qa-reviewer`（`agents/qa-reviewer.toml`） | 复核程序化 QA finding，修正真错并记录误报 |
 
 > 四个子代理由 Codex 自定义角色（`~/.codex/agents/*.toml`）替代了此前的同名技能，角色文件内含各自的 `developer_instructions` 与模型分工说明。
-> 当前分工为 `context-analyzer = gpt-5.6-luna / max`、`qa-reviewer = gpt-5.6-luna / max`，翻译与校对为 `gpt-5.6-sol / high`。
+> 当前分工为 `context-analyzer = gpt-5.6-luna / max`、`qa-reviewer = gpt-5.6-luna / max`，翻译与校对为 `gpt-5.6-terra / max`。
+
+CLI 由 `scripts/run_role.py` 执行受控角色流程。Codex Desktop 与 IDE 使用原生角色 spawn：父代理依次执行 `agent-attempt`、等待原生子代理完成、`agent-complete` 和 `promote`；详细命令见 skill 的「原生角色编排」部分。
 
 ## 兼容性
 
 - Python 3.10+
-- skill workflow protocol 9
-- 工具包 `batch-translate` 9.x；自动更新前会验证 GitHub origin，更新后会验证协议
+- skill workflow protocol 10
+- 工具包 `batch-translate` 10.x；自动更新前会验证 GitHub origin，更新后会验证协议

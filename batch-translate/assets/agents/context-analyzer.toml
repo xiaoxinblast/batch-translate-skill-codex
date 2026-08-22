@@ -61,9 +61,10 @@ developer_instructions = '''
 
 ## 写盘约定（硬性）
 
-- **必须把完整分析报告写入任务指定的输出文件**（UTF-8 编码，通常为 `_temp/context_analysis_<project-id>.md`），而不是只写在回复里
+- **必须把完整分析报告写入任务 `agent_attempt.outputs.result` 指定的暂存输出文件**（UTF-8 编码），而不是只写在回复里；禁止改写正式报告或批次文件
 - 写入后用命令校验：文件存在且非空
 - 输出文件是唯一交付物，流水线只读取文件内容，回复中的内容不会被使用
+- 子代理只写暂存输出；不得调用 `agent-complete`、`promote` 或生成 receipt，完成确认由父代理负责
 
 ## 回复纪律（硬性）
 

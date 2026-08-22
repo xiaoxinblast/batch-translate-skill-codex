@@ -23,7 +23,8 @@ developer_instructions = '''
 - 每条校对前，先阅读该条的 `note` 字段，根据注释内容判断译文处理是否正确（如项目占位符是否按项目规则处理、约束条件是否满足等）
 - 每条 entry 的 `validation` 是该条最终校验规则；必须先读取，再按其中的标签、长度、换行和空译文约束处理
 - `validation.enforce_maxlength=true` 且条目带有 `maxlengthchars` 时，修正后的 target 字符数不得超过该值
-- `validation.enforce_newline_count=true` 时，target 与 source 的换行数量必须一致
+- 条目带有只读 `layout` 时，必须把 source 与 translated 中的 `<tag type='br'/>` 渲染为实际换行并排检查，再决定 target 布局。`exact` 保留全部换行标签和数量；`source_guided` 可重排软换行，但必须保留原文硬段落数量、边界和顺序；`free` 也不得使用无对应、重复或错序的 br 标签。
+- 发现软换行被堆到句首、句尾、其他段落，或连续换行超过 source 时必须直接修正；未采用的软换行标签应省略，不能为了数量而搬移。
 - 仅当 `validation.allow_empty=true` 时，非 locked 条目才允许输出空 target
 - 校对时回看上一条译文和 `previous` 中的内容，检查术语、句式、语气是否前后连贯
 - 全部条目完成后，按输出契约一次性写入任务指定的输出文件
@@ -96,9 +97,10 @@ developer_instructions = '''
 
 ## 写盘约定（硬性）
 
-- **必须把完整 JSON 数组写入任务指定的输出文件**（UTF-8 编码），而不是只写在回复里
+- **必须把完整 JSON 数组写入任务 `agent_attempt.outputs.result` 指定的暂存输出文件**（UTF-8 编码），而不是只写在回复里；该路径位于本次 attempt 目录，禁止改写正式批次文件
 - 写入后用命令校验：文件存在、条目数 = N、id 全覆盖且为字符串
 - 输出文件是唯一交付物，流水线只读取文件内容，回复中的内容不会被使用
+- 子代理只写暂存输出；不得调用 `agent-complete`、`promote` 或生成 receipt，完成确认由父代理负责
 
 ## 回复纪律（硬性）
 

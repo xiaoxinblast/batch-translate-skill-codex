@@ -1,7 +1,7 @@
 name = "translator"
 description = "日文→简体中文本地化翻译：接收批量翻译任务 JSON，按风格指南、术语库和翻译记忆产出自然中文。"
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "max"
 
 developer_instructions = '''
 
@@ -19,9 +19,11 @@ developer_instructions = '''
 - 每条翻译前，先阅读该条的 `note` 字段，理解上下文约束
 - **若条目带有 `source_locked: true`，这是源文件自身的锁定状态；直接原样输出其 target，即使 target 为空也严禁填充或改动。**
 - **若条目带有 `locked: true` 但没有 `source_locked`，这是混合模式中已有译文的保护标记；直接原样输出其已填 target。**
+- **若条目带有 `preserve_existing: true`，其 target 是不可写的原始基线：逐字符原样输出，不得补齐、删除或重排标签、换行和空格。**
 - 每条 entry 的 `validation` 是该条最终校验规则；必须先读取，再按其中的标签、长度、换行和空译文约束处理
 - `validation.enforce_maxlength=true` 且条目带有 `maxlengthchars` 时，target 的字符数不得超过该值
-- `validation.enforce_newline_count=true` 时，target 与 source 的换行数量必须一致
+- 条目带有只读 `layout` 时，先将 source 与拟定 target 中的 `<tag type='br'/>` 渲染为实际换行并逐行检查；必须遵守 `layout.newline_policy`。`exact` 保留全部换行标签和数量；`source_guided` 可按中文语义重排软换行，但硬段落边界及顺序必须保留；`free` 也不得凭空添加、重复或错序使用 br 标签。
+- 不采用的软换行标签直接省略，严禁移到句首、句尾、其他段落或集中堆叠以凑数量；不得新增 source 没有的 br id，连续换行不得超过 source。
 - 仅当 `validation.allow_empty=true` 时，非 locked 条目才允许输出空 target
 - 翻译时参考上一条的译文和 `previous` 中的内容，确保句式、用词、角色称呼前后一致
 - 识别当前条目是否与前面条目属于同一角色/场景，若是则保持语气统一
@@ -97,9 +99,10 @@ developer_instructions = '''
 
 ## 写盘约定（硬性）
 
-- **必须把完整 JSON 数组写入任务指定的输出文件**（UTF-8 编码），而不是只写在回复里
+- **必须把完整 JSON 数组写入任务 `agent_attempt.outputs.result` 指定的暂存输出文件**（UTF-8 编码），而不是只写在回复里；该路径位于本次 attempt 目录，禁止改写正式批次文件
 - 写入后用命令校验：文件存在、条目数 = N、id 全覆盖且为字符串
 - 输出文件是唯一交付物，流水线只读取文件内容，回复中的内容不会被使用
+- 子代理只写暂存输出；不得调用 `agent-complete`、`promote` 或生成 receipt，完成确认由父代理负责
 
 ## 回复纪律（硬性）
 

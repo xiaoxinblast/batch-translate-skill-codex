@@ -30,7 +30,7 @@ install_roles = _load("install_roles", SKILL / "scripts" / "install_roles.py")
 
 
 class ToolkitCheckTest(unittest.TestCase):
-    def _toolkit(self, remote: str, protocol: int = 9) -> tuple[tempfile.TemporaryDirectory, Path]:
+    def _toolkit(self, remote: str, protocol: int = 10) -> tuple[tempfile.TemporaryDirectory, Path]:
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
         subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
@@ -41,11 +41,11 @@ class ToolkitCheckTest(unittest.TestCase):
         )
         (root / "batch.py").write_text(
             "import json, sys\n"
-            f"print(json.dumps({{'toolkit_version': '9.0.0', 'workflow_protocol': {protocol}}}))\n",
+            f"print(json.dumps({{'toolkit_version': '10.0.0', 'workflow_protocol': {protocol}}}))\n",
             encoding="utf-8",
         )
         (root / "toolkit_version.py").write_text(
-            "TOOLKIT_VERSION = '9.0.0'\n"
+            "TOOLKIT_VERSION = '10.0.0'\n"
             f"WORKFLOW_PROTOCOL_VERSION = {protocol}\n",
             encoding="utf-8",
         )
@@ -99,7 +99,7 @@ class ToolkitCheckTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "版本不兼容"):
             check_toolkit.validate_version({
                 "toolkit_version": "7.0.0",
-                "workflow_protocol": 9,
+                "workflow_protocol": 10,
             })
 
     def test_checks_fetched_revision_without_executing_it(self):
@@ -110,7 +110,7 @@ class ToolkitCheckTest(unittest.TestCase):
 
         version = check_toolkit.validate(toolkit, revision="HEAD")
 
-        self.assertEqual(version["workflow_protocol"], 9)
+        self.assertEqual(version["workflow_protocol"], 10)
 
 
 class RoleInstallTest(unittest.TestCase):
@@ -126,8 +126,8 @@ class RoleInstallTest(unittest.TestCase):
     def test_role_model_assignments_are_explicit(self):
         expected = {
             "context-analyzer.toml": ("gpt-5.6-luna", "max"),
-            "translator.toml": ("gpt-5.6-sol", "high"),
-            "trans-reviewer.toml": ("gpt-5.6-sol", "high"),
+            "translator.toml": ("gpt-5.6-terra", "max"),
+            "trans-reviewer.toml": ("gpt-5.6-terra", "max"),
             "qa-reviewer.toml": ("gpt-5.6-luna", "max"),
         }
         for name, (model, effort) in expected.items():

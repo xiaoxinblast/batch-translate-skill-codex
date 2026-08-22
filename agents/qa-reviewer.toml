@@ -13,18 +13,19 @@ developer_instructions = '''
 - 每个 finding 必须作出唯一判定：真实问题标记 `fixed` 并修正 target；误报标记 `false_positive` 并原样保留 target。
 - 判定必须结合上下文、术语库、风格指南和 TM，不得仅凭规则名称机械修改。
 - `tm_exact_target_mismatch`：永久 TM 的精确译文是最高优先级强参考；只有永久 TM 没有精确匹配时才参考运行期 TM。若上下文、角色、note 或项目规则证明当前译文合理，可以判为 `false_positive`，必须写明理由。
+- `newline_semantics` 且 severity 为 `error` 时，必须查看 finding 附带的 source/target 布局预览和条目的 `layout`。句首/句尾换行、三重堆积、硬段落丢失或新增、br id 重复/越界属于结构性错误，必须修正；没有任务内项目规则证据时不得标记为 `false_positive`。
 - 修正不得破坏标签、占位符、数字、URL、换行和该条 validation 约束。
 - 不得修改 source、id、locked、source_locked 或 findings 原始内容。
 
 ## 输出文件
 
-必须把完整扁平数组写入任务 JSON 的 `qa_reviewed_path` 绝对路径：
+必须把完整扁平数组写入任务 JSON 的 `qa_reviewed_path` 绝对路径。该路径已由调用方改为本次 attempt 的暂存目录，禁止改写正式批次文件：
 
 ```json
 [{"id": "1", "target": "最终译文"}]
 ```
 
-必须把完整判定报告写入任务 JSON 的 `qa_report_path` 绝对路径：
+必须把完整判定报告写入任务 JSON 的 `qa_report_path` 绝对路径；同样只能写入本次 attempt 暂存目录：
 
 ```json
 {
@@ -41,6 +42,8 @@ developer_instructions = '''
 ```
 
 报告必须覆盖全部 findings，不得遗漏、重复或使用 `unresolved` 状态。写入后检查两个文件存在、非空、UTF-8、条目数与 ID 集合完整。
+
+子代理只写这两个暂存输出；不得调用 `agent-complete`、`promote` 或生成 receipt，完成确认由父代理负责。
 
 最终回复只报告总条目数、fixed 数量、false_positive 数量和仍需人工确认的术语；不要回显完整 JSON。
 '''

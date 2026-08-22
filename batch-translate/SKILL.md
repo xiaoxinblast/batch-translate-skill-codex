@@ -1,6 +1,6 @@
 ---
 name: batch-translate
-description: "批量翻译工作流（Codex 适配版 v9）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、永久/运行期分层 TM、语境分片、分批翻译、逐批校对、程序化 QA、AI QA 复核、严格验证和独立文件导出；Windows 默认 PowerShell。"
+description: "批量翻译工作流（Codex 适配版 v10）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、共享项目规则、永久/运行期分层 TM、受控角色执行、程序化 QA、严格验证和独立文件导出；Windows 默认 PowerShell。"
 ---
 
 # batch-translate — 批量翻译工作流
@@ -18,7 +18,7 @@ description: "批量翻译工作流（Codex 适配版 v9）。支持 mqxliff/doc
 
 > ⚠️ **强制步骤**：每次触发本 skill 必须首先执行，不可跳过。
 
-先运行 `python -c "import sys; assert sys.version_info >= (3, 10), sys.version"`，确认解释器为 Python 3.10 或更高版本；再把 `<skill_dir>` 解析为本 `SKILL.md` 所在目录的绝对路径。工具包必须满足 workflow protocol 9。
+先运行 `python -c "import sys; assert sys.version_info >= (3, 10), sys.version"`，确认解释器为 Python 3.10 或更高版本；再把 `<skill_dir>` 解析为本 `SKILL.md` 所在目录的绝对路径。工具包必须满足 workflow protocol 10。
 
 ### 情况 A：`batch_translate/` 不存在
 
@@ -44,12 +44,12 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 
 目录结构（按安全 project id 分组；同名源文件冲突时自动加路径哈希）：
 - `data/<project-id>/_working_*, batch_state.json, project_identity.json` ← 每个源文件独立
-- `data/<project-id>/project_rules/` ← 项目验证/QA 策略快照，工具包更新不得覆盖
+- `data/project_rules/current.json` 与 `revisions/<revision>/` ← 同一项目所有文件共享的规则 revision，工具包更新不得覆盖
 - `exports/<project-id>/_batch_NNN_*.json` ← 每个源文件独立
 - `exports/<project-id>/document_summary.md` ← 语境分析 sidecar（状态清理后仍保留）
 - `data/term_base.xlsx, data/style_guide.txt` ← 共享术语库和风格指南
 - 用户指定的永久 TM（例如 `data/tm_memory.json`）← 项目权威参考，只读
-- `data/<project-id>/tm_runtime/_batch_NNN.json` ← 当前项目每批独立的运行期 TM，不与永久 TM 合并
+- `data/project_tm_runtime/<document-id>/_batch_NNN.json` ← 已提交运行期 TM；所有活动文件可立即读取，永久 TM 始终优先
 
 > `batch_state.json` 位于 `data/<project-id>/`，**全部批次提交完成后自动清理**；
 > 完成后的收尾命令（`export`/`term-gaps`）依赖 `exports/<project-id>/document_summary.md`
@@ -200,9 +200,8 @@ python batch_translate/batch.py init <源文件> --batch-chars 3000 --context-si
 可选参数：
 
 - xlsx/xlsm：`--source-col C --target-col D --header-row 3 --sheet <名称>`；`--sheet "*"` 处理全部工作表。
-- 项目校验策略：`--validation-policy <validation_policy.json>`。仅用它声明项目允许的例外，不得修改通用校验器硬编码项目规则。
-- 项目 QA 策略：`--qa-policy <qa_policy.json>`。初始化后会复制为 `data/<project-id>/project_rules/qa_policy.json` 快照。
-- 永久 TM：`--tm-permanent <tm.json>`；旧参数 `--tm <tm.json>` 仍作为只读永久 TM 别名保留。可选 `--tm-runtime-dir <目录>` 覆盖默认的 `data/<project-id>/tm_runtime/`。
+- 项目规则：先用 `project-config init --validation-policy <validation_policy.json> --qa-policy <qa_policy.json>` 创建共享 revision；后续 `project-config update` 会原子升级全部活动文件，并废弃旧 revision 的未提交任务、输出和 receipt。项目专属 QA 插件只通过 `--qa-plugin <qa_plugin.py>` 加入该 revision。
+- 永久 TM：`--tm-permanent <tm.json>`；旧参数 `--tm <tm.json>` 仍作为只读永久 TM 别名保留。运行期 TM 默认写入 `data/project_tm_runtime/<document-id>/`，跨文件共享但优先级低于永久 TM。
 - 项目选择：`--project <project-id>` 可显式命名；省略时优先使用 stem，同名冲突自动附加路径哈希。重复初始化现有状态会被拒绝，确需重建时显式使用 `--force-reinit`。
 - 工作流模式必须传 `--reference-selection` 与 `--require-agent-receipts`；前者的五类路径与 SHA-256 必须与 init 参数一致，后者要求每个子代理阶段有可核验 receipt。
 
@@ -230,11 +229,10 @@ python batch_translate/batch.py context-split --max-chars 45000 --project <proje
 - `total_parts=1`：启动一次 `context-analyzer`，读取裁剪后的 `context_part_001.json`。
 - `total_parts>1`：每片分别启动 `context-analyzer`，输入对应 `context_part_NNN.json`，报告写到项目 `_temp/`；全部完成后运行 `context-pack <报告...> --project <project-id>`，再让一个 `context-analyzer` 读取生成的 `context_merge_task.json`，综合为最终全局报告。
 
-分析员必须把最终紧凑报告写入任务指定的文件（如 `_temp/context_analysis_<project-id>.md`），默认上限 5500 字符；回复只留摘要。
-返回后确认报告文件完整，然后写入状态并保留 sidecar：
+分析员必须把最终紧凑报告写入本次 attempt 的暂存文件，默认上限 5500 字符；回复只留摘要。CLI 使用受控运行器；App/IDE 按文末「原生角色编排」创建和晋升 attempt：
 
 ```powershell
-python batch_translate/batch.py receipt context-analyzer --agent-id <agent-id> --role-config ~/.codex/agents/context-analyzer.toml --input <context-task.json> --output _temp/context_analysis_<project-id>.md --project <project-id>
+python <skill_dir>/scripts/run_role.py context-analyzer --toolkit <绝对路径>/batch_translate --project <project-id> --workspace <项目根目录> --input <context-task.json> --output-name context_analysis_<project-id>.md
 python batch_translate/batch.py summary _temp/context_analysis_<project-id>.md --project <project-id>
 ```
 
@@ -264,21 +262,21 @@ python batch_translate/batch.py next --review  # 全译文文件（跳过翻译�
 ```
 
 任务 JSON 中的 `tm_matches`/`tm_fragments` 来自永久 TM，`runtime_tm_matches`/`runtime_tm_fragments`
-来自本项目已经提交的各批运行期 TM。翻译和校对都读取两层；永久 TM 是权威层，若两层冲突必须优先参考永久层。
+来自项目中所有文件已经提交的运行期 TM。翻译和校对都读取两层；永久 TM 是权威层，若两层冲突必须优先参考永久层。含 `<br>` 的条目还会提供只读 `layout`，其中列出渲染行、软换行、硬段落边界和生效策略。
 
 ### Step 2: 翻译（仅 translate 模式）
 
-启动 `translator` 子代理角色（角色文件：`~/.codex/agents/translator.toml`）。任务参数中必须使用**绝对路径**指定输入输出文件（从 `batch_state.json` 的 `stem` 推导）。
+CLI 用受控运行器启动 `translator` 子代理角色（角色文件：`~/.codex/agents/translator.toml`）。运行器先创建隔离 attempt，再使用 `codex exec - --json --output-last-message` 启动父级编排 Agent，显式要求其使用该原生角色并等待完成；不会使用不存在的 `--agent` 参数。App/IDE 不得用该命令替代自身的原生子代理，而应按文末「原生角色编排」执行。
 
 - source_locked=true 的条目：源文件自身锁定，保留 target 不变，**即使 target 为空也严禁填充或改动**
 - preserve_existing=true 的条目：混合模式的已有译文，逐字符保留 target；不得补齐、删除或重排标签、换行或空格
 - locked=false 的条目：从零翻译
 - 每条 `validation` 是该条最终生效的标签、长度、换行和空译文规则；角色必须逐条遵守，不得用通用默认覆盖项目策略
 
-翻译输出落盘后，主代理必须实际启动 `translator` 角色，并记录 receipt；缺 receipt、配置哈希不符或输出哈希变化时不得运行 `review`：
+运行器每 30 秒检查活动；10 分钟无活动或 45 分钟总时限会终止本次进程树，固定输入只重试一次。输出、完成事件和 receipt v2 只会在稳定 SHA 后原子晋升；缺 receipt、配置哈希不符或输出哈希变化时不得运行 `review`：
 
 ```powershell
-python batch_translate/batch.py receipt translator --agent-id <agent-id> --role-config $HOME\.codex\agents\translator.toml --input <to_translate.json> --output <translated.json> --project <project-id>
+python <skill_dir>/scripts/run_role.py translator --toolkit <绝对路径>/batch_translate --project <project-id> --workspace <项目根目录>
 ```
 
 ### Step 3: 生成校对文件（仅 translate 模式）
@@ -297,7 +295,11 @@ python batch_translate/batch.py review _batch_NNN_translated.json
 > 文件存在且非空、mtime 已更新、条目数 = N、id 全覆盖、locked 条目未改动、follow-up 指定的 id 已生效。
 > 不满足则退回 Step 4 重跑，或由根代理机械修正后复验，再进入 Step 4.5。
 
-校对输出落盘后，主代理必须实际启动 `trans-reviewer` 角色并记录同样的 receipt；无 receipt 时 `qa` 会拒绝推进。
+校对必须并排检查 source/target 的渲染布局：允许中文重排软换行不等于允许移动或堆积标签；硬段落仍须保留。CLI 使用同一受控运行器晋升 `trans-reviewer` 输出；App/IDE 按文末「原生角色编排」晋升。无 receipt 时 `qa` 会拒绝推进：
+
+```powershell
+python <skill_dir>/scripts/run_role.py trans-reviewer --toolkit <绝对路径>/batch_translate --project <project-id> --workspace <项目根目录>
+```
 
 ### Step 4.5: 机制化验证校对 JSON
 
@@ -313,8 +315,7 @@ python batch_translate/scripts/verify_batch.py --stem <project-id>
 - `WARNING:` + `RESULT: BLOCKED`（exit 3）→ 退回 Step 4 修正后重跑；仅当项目规则明确允许时才可同时加 `--allow-warnings --warning-reason "<具体原因>"` 放行，再进入 Step 4.6
 
 默认校验要求：批次 id 集合精确一致、id/target 类型正确、非保留项 target 非空；`preserve_existing`/`source_locked` 仅检查逐字符未变，随后不做标签、换行、长度或可修改型 QA。新译条目仍要求
-除 `br` 外的标签序列精确一致、无裸标签、满足 `maxlengthchars`。默认不强制换行数量一致；项目若需更严格或确有例外，
-通过 `validation_policy.json` 统一配置，Step 4.5 与 submit 使用同一策略。
+除 `br` 外的标签序列精确一致、无裸标签、满足 `maxlengthchars`。`newline_policy` 默认为 `source_guided`：软换行可按中文语义重排，硬段落仍要保留，不得添加、重复、错序或在首尾堆积 br 标签；旧 `enforce_newline_count=true` 自动映射为 `exact`。项目规则 revision 由 `project-config` 统一配置，Step 4.5 与 submit 使用同一策略。
 
 既有译文的格式风险使用只读审计，不得作为阻断理由：`python batch_translate/batch.py tag-audit --project <project-id>`。
 
@@ -330,23 +331,27 @@ python batch_translate/batch.py qa --project <project-id>
 exports/<project-id>/_batch_NNN_qa_task.json
 ```
 
-默认 QA 包括精确 TM 译文不一致、占位符/转义序列、数字、URL/邮箱、空格、括号、疑似未翻译、长度比例、术语一致性和重复译法；换行数量检查默认关闭，可在项目 `qa_policy.json` 中显式启用。精确 TM 检查先使用永久 TM；只有永久层没有精确匹配时才使用运行期 TM，永久与运行期译文冲突时以永久层为准。preserve_existing/locked/source_locked 条目跳过可修改型 QA。
+默认 QA 包括精确 TM 译文不一致、占位符/转义序列、数字、URL/邮箱、空格、括号、疑似未翻译、长度比例、术语一致性和重复译法。`newline_semantics` 默认作为 error 阻断首尾换行、三重堆积、硬段落丢失/新增及 br 标签重复或越界；可疑数字/英文标识/仅标点断行只作为 warning。精确 TM 检查先使用永久 TM；只有永久层没有精确匹配时才使用运行期 TM，永久与运行期译文冲突时以永久层为准。preserve_existing/locked/source_locked 条目跳过可修改型 QA。
 
 - 无 finding：QA 状态标记为 `clean`，直接进入 Step 5 提交。
 - 有 finding：启动 `qa-reviewer`，不得直接 submit。
 
 ### Step 4.7: QA 代理复核
 
-`qa-reviewer` 必须使用绝对路径读取 QA task，并实际写入：
+`qa-reviewer` 在 CLI 必须通过受控运行器读取 attempt-local QA task；在 App/IDE 必须通过文末「原生角色编排」读取并写入暂存输出。晋升后才成为：
 
 ```text
 _batch_NNN_qa_reviewed.json
 _batch_NNN_qa_report.json
 ```
 
-QA task 中的 `qa_reviewed_path` 与 `qa_report_path` 是本批唯一有效的绝对输出路径；`qa-submit` 会拒绝路径不一致的文件。
+QA task 中的 `qa_reviewed_path` 与 `qa_report_path` 在 attempt 副本中会改为暂存路径；晋升后才落到本批唯一有效的正式路径。结构性 `newline_semantics` error 没有项目规则证据不得标为误报。
 
-报告必须逐条给出 `fixed` 或 `false_positive` 及理由；遗漏、重复、`unresolved` 或修改锁定条目都必须退回重跑。返回后检查两个文件存在、非空、ID 全覆盖、locked 条目未改变，并记录 `qa-reviewer` receipt。
+报告必须逐条给出 `fixed` 或 `false_positive` 及理由；遗漏、重复、`unresolved` 或修改锁定条目都必须退回重跑。QA 的 reviewed/report 作为一个事务晋升：
+
+```powershell
+python <skill_dir>/scripts/run_role.py qa-reviewer --toolkit <绝对路径>/batch_translate --project <project-id> --workspace <项目根目录>
+```
 
 ### Step 4.8: 提交 QA 结果
 
@@ -362,7 +367,7 @@ python batch_translate/batch.py submit _batch_NNN_reviewed.json
 ```
 
 submit 先完整校验，再以事务方式执行 write + 当前批运行期 TM 写入 + 重新 parse + 状态推进。
-永久 TM 始终只读；成功提交会生成 `data/<project-id>/tm_runtime/_batch_NNN.json`，只包含当前批新增或实际修改译文，不会与永久 TM 合并。MQXLIFF 最终导出直接复制已提交工作副本，preserved target 不会再次重建。任一步失败都会回滚工作文件、工作 JSON、当前批运行期 TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
+永久 TM 始终只读；成功提交会生成 `data/project_tm_runtime/<document-id>/_batch_NNN.json`，只包含当前批新增或实际修改译文，并立即供项目其他文件检索，不会与永久 TM 合并。MQXLIFF 最终导出直接复制已提交工作副本，preserved target 不会再次重建。任一步失败都会回滚工作文件、工作 JSON、当前批运行期 TM、state 和 manifest，不会留下半提交状态。成功后回到 Step 1。
 submit 遇到 warning 时默认阻断；若明确授权，必须同时传 `--allow-warnings --warning-reason "<具体原因>"`，理由和 warning 会写入 state，并在完成后保留到 manifest。
 
 ### 完成
@@ -404,5 +409,29 @@ python batch_translate/batch.py term-gaps
 - `trans-reviewer.toml`：`gpt-5.6-terra` + `max`，用于逐条校对
 - `qa-reviewer.toml`：`gpt-5.6-luna` + `max`，用于复核程序化 QA finding
 - 调用时必须使用对应 Codex 自定义角色，记录实际 agent id；不得用根代理生成结果替代角色输出。
-- `receipt` 会核对角色名、模型与 reasoning effort；配置不符合上述契约时，后续阶段不得推进。
+- CLI 必须通过 `scripts/run_role.py`。它负责创建 attempt、监测 CLI 进程并调用 `agent-complete` 与 `promote`。
+- App/IDE 必须使用对应的原生自定义角色 spawn；`scripts/run_role.py` 会另起 CLI 会话，不能代表 App/IDE 的原生子代理。
+- 两种表面都先写 `_temp/agents/<document>/<batch>/<role>/<attempt>/`，仅在完成事件、稳定 SHA 和角色配置核验通过后生成 receipt v2 并原子晋升。手工 `receipt` 命令无效。
 - **临时文件纪律**：子代理如需辅助脚本/中间文件，一律放项目 `_temp/` 或 `_temp_scripts/`，用后删除；禁止在 `batch_translate/`（data、exports 为受管目录）内创建文件。
+
+### 原生角色编排（Codex Desktop / IDE）
+
+父代理负责编排，子代理只负责读取 `agent_task.json` 并写入其中 `agent_attempt.outputs` 指定的暂存文件。以下步骤适用于 `translator`、`trans-reviewer`、`qa-reviewer` 和 `context-analyzer`；后者仍须在创建 attempt 时传入既有的 `--input` 与 `--output-name` 参数。
+
+```powershell
+# 1. 父代理创建本次原生子代理的隔离 attempt。
+$attempt = python batch_translate/batch.py agent-attempt <stage> --project <project-id> --execution-surface app | ConvertFrom-Json
+$attemptDir = Split-Path -Parent $attempt.outputs.result
+
+# 2. 用名为 <stage> 的原生自定义角色 spawn 子代理；向它提供 $attempt.agent_input，
+#    并要求它只写 $attempt.outputs 指定的文件。父代理从原生 spawn 返回值记录真实子代理 ID，
+#    再等待 Desktop/IDE 报告该子代理实际完成。
+
+# 3. 父代理取得原生 spawn 返回的真实 ID 后，建立完成事件并原子晋升。
+$completion = python batch_translate/batch.py agent-complete <stage> --attempt-dir $attemptDir --agent-id <真实子代理ID> --project <project-id> | ConvertFrom-Json
+python batch_translate/batch.py promote <stage> --attempt-dir $attemptDir --agent-id <真实子代理ID> --role-config <CODEX_HOME>\agents\<stage>.toml --completion-event $completion.completion_event --project <project-id>
+```
+
+- `agent-complete` 只接受当前 attempt，确认全部暂存输出存在且 SHA 稳定后写入 attempt 内唯一的 `completion_event.json`；不得手写该文件或把其他路径传给 `promote`。
+- 父代理必须从原生 spawn 的完成结果取得 `agent_id`，不得自行编造；子代理不得调用 `agent-complete`、`promote` 或修改正式批次文件。
+- Desktop/IDE 没有可由 CLI runner 代管的子线程进程树。父代理须通过原生子代理状态等待真实完成；连续 10 分钟无活动或总计 45 分钟时终止该子代理，不运行 `agent-complete`/`promote`，固定输入最多创建一个新 attempt 重试一次。
