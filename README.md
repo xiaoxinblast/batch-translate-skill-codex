@@ -62,7 +62,7 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 > 四个子代理由 Codex 自定义角色（`~/.codex/agents/*.toml`）替代了此前的同名技能，角色文件内含各自的 `developer_instructions` 与模型分工说明。
 > 当前分工为 `context-analyzer = gpt-5.6-luna / max`、`qa-reviewer = gpt-5.6-luna / max`，翻译与校对为 `gpt-5.6-terra / max`。
 
-CLI 由 `scripts/run_role.py` 执行受控角色流程。Codex Desktop 与 IDE 使用原生角色 spawn：父代理依次执行 `agent-attempt`、等待原生子代理完成、`agent-complete` 和 `promote`；详细命令见 skill 的「原生角色编排」部分。
+当前会话具备原生角色 spawn 能力时，无论宿主终端是独立 CLI、VS Code、Desktop 还是 IDE，都使用原生编排：父代理依次执行 `agent-attempt`、等待子代理完成、`agent-complete` 和 `promote`。`scripts/run_role.py` 仅是没有原生 spawn 能力的独立 CLI 后备；详细命令见 skill 的「原生角色编排」部分。
 
 ## 兼容性
 

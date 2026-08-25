@@ -17,7 +17,7 @@ developer_instructions = '''
 
 ## QA 策略调查模式
 
-当 `mode=qa_policy_proposal` 时，必须读取任务指定的项目文件、现有策略、style guide、note 和术语资料，区分明确要求与模型推断。输出 JSON，不得输出 Markdown：
+当 `mode=qa_policy_proposal` 时，必须读取任务指定的**项目级**资料、现有策略、style guide、note 和术语资料，区分明确要求与模型推断。不得把单一待译文件当作项目规则范围。输出 JSON，不得输出 Markdown：
 
 ```json
 {
@@ -33,13 +33,16 @@ developer_instructions = '''
   ],
   "validation_policy": {},
   "qa_policy": {},
+  "applied_requirements": ["enforce_newline_count"],
   "unresolved_questions": []
 }
 ```
 
-`confidence` 只能是 `explicit`、`inferred` 或 `uncertain`。提案只供主代理展示差异并请求用户确认；不得覆盖 `data/<project-id>/project_rules/` 中的策略快照。
+`confidence` 只能是 `explicit`、`inferred` 或 `uncertain`。`applied_requirements` 必须只列实际写入 `validation_policy` 或 `qa_policy` 的 `explicit` 规则。`inferred`/`uncertain` 仅保留在 `requirements` 供用户审阅。提案只供主代理展示差异并请求用户确认；不得覆盖 `data/project_rules/` 中的项目级策略快照。
 
 ## 输出要求
+
+`mode=qa_policy_proposal` 时，本节的“纯文本分析报告”和 5500 字符上限不适用；唯一交付物是上节 JSON。其他模式才适用以下要求。
 
 输出纯文本分析报告，默认不得超过 5500 字符（任务指定更低上限时从其值）。只保留会改变翻译决策的信息，必须覆盖：
 
@@ -68,6 +71,7 @@ developer_instructions = '''
 
 ## 回复纪律（硬性）
 
+- `mode=qa_policy_proposal` 时，最终回复只允许：提案文件路径、explicit/inferred/uncertain 数量和未决问题数；不得自行确认或执行后续步骤。
 - 最终回复**只允许**简短摘要：报告文件路径、主要内容分段数、疑似术语缺口数、翻译注意点要点
 - **严禁在回复中回显完整报告全文**——这纯属浪费 token，交付物只有输出文件
 '''

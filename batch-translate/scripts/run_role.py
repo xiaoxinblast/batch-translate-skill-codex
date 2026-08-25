@@ -9,6 +9,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -49,6 +50,21 @@ def load_role(path: Path, stage: str) -> dict[str, str]:
     if value["name"] != stage:
         raise RoleRunError(f"角色配置名称不匹配: 期望 {stage}，实际 {value['name']}")
     return {key: value[key] for key in required}
+
+
+def resolve_codex_bin(value: str) -> str:
+    """Resolve a directly executable Codex launcher for subprocess on Windows."""
+    candidate = Path(value)
+    if candidate.is_file():
+        return str(candidate.resolve())
+    names = [value]
+    if os.name == "nt" and value.lower() == "codex":
+        names = ["codex.cmd", "codex.exe", "codex"]
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return found
+    raise RoleRunError(f"找不到可执行的 Codex CLI: {value}")
 
 
 def run_batch(
@@ -131,6 +147,7 @@ def build_codex_command(
         *command,
         "exec",
         "--json",
+        "--skip-git-repo-check",
         "--output-last-message",
         str(last_message),
         "-C",
@@ -270,16 +287,51 @@ def run_once(args: argparse.Namespace, attempt_number: int) -> dict[str, Any]:
     return {"attempt": attempt, "agent_id": agent_id, "event_log": event_log}
 
 
+def run_project_proposal_once(args: argparse.Namespace) -> dict[str, Any]:
+    """Run the pre-init project QA proposal without creating document state."""
+    task = run_batch(args.toolkit, [
+        "project-config", "proposal-task",
+        "--input", str(args.project_proposal_input.resolve()),
+        "--out", str(args.project_proposal_output.resolve()),
+    ], expect_json=True)
+    agent_input = Path(task["agent_input"])
+    output = Path(task["output"])
+    if not agent_input.is_file() or not isinstance(task.get("input_sha256"), str):
+        raise RoleRunError("项目 QA 提案任务未返回可核验的输入")
+    if sha256_file(agent_input) != task["input_sha256"]:
+        raise RoleRunError("项目 QA 提案输入在启动前已变化")
+    role = load_role(args.role_config, args.stage)
+    agent_id, event_log = monitor_codex(
+        [args.codex_bin, "-m", role["model"]],
+        parent_prompt(args.stage, args.role_config, {
+            "agent_input": str(agent_input),
+            "outputs": {"result": str(output)},
+        }),
+        args.workspace,
+        agent_input.parent,
+    )
+    run_batch(args.toolkit, ["project-config", "validate-proposal", str(output)])
+    return {"agent_id": agent_id, "event_log": event_log, "output": str(output.resolve())}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="以真实 codex exec JSONL 事件运行并晋升一个 batch-translate 角色"
     )
     parser.add_argument("stage", choices=sorted(STAGES))
     parser.add_argument("--toolkit", type=Path, required=True)
-    parser.add_argument("--project", required=True)
+    parser.add_argument("--project", default=None)
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
     parser.add_argument("--input", type=Path, default=None)
     parser.add_argument("--output-name", default=None)
+    parser.add_argument(
+        "--project-proposal-input", type=Path, default=None,
+        help="项目级 QA 调研输入；仅 context-analyzer 可用",
+    )
+    parser.add_argument(
+        "--project-proposal-output", type=Path, default=None,
+        help="项目级 QA 提案输出；仅 context-analyzer 可用",
+    )
     parser.add_argument("--role-config", type=Path, default=None)
     parser.add_argument("--codex-bin", default="codex")
     args = parser.parse_args()
@@ -288,22 +340,53 @@ def main() -> None:
         parser.error(f"无效工具包目录: {args.toolkit}")
     if not args.workspace.is_dir():
         parser.error(f"工作目录不存在: {args.workspace}")
+    is_project_proposal = args.project_proposal_input is not None or args.project_proposal_output is not None
+    if is_project_proposal:
+        if (
+            args.stage != "context-analyzer"
+            or args.project_proposal_input is None
+            or args.project_proposal_output is None
+            or args.project is not None
+            or args.input is not None
+            or args.output_name is not None
+        ):
+            parser.error(
+                "项目 QA 提案仅支持 context-analyzer，且需同时提供 --project-proposal-input/--project-proposal-output"
+            )
+    elif not args.project:
+        parser.error("普通角色运行必须提供 --project")
     if args.role_config is None:
         codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
         args.role_config = codex_home / "agents" / f"{args.stage}.toml"
     if not args.role_config.is_file():
         parser.error(f"角色配置不存在: {args.role_config}")
+    try:
+        args.codex_bin = resolve_codex_bin(args.codex_bin)
+    except RoleRunError as exc:
+        parser.error(str(exc))
     errors: list[str] = []
     for attempt_number in range(1, MAX_RETRIES + 2):
         try:
-            result = run_once(args, attempt_number)
-            print(json.dumps({
-                "status": "promoted",
-                "stage": args.stage,
-                "agent_id": result["agent_id"],
-                "attempt_id": result["attempt"]["attempt_id"],
-                "event_log": result["event_log"],
-            }, ensure_ascii=False))
+            if is_project_proposal:
+                result = run_project_proposal_once(args)
+                response = {
+                    "status": "proposal_ready",
+                    "scope": "project",
+                    "stage": args.stage,
+                    "agent_id": result["agent_id"],
+                    "event_log": result["event_log"],
+                    "output": result["output"],
+                }
+            else:
+                result = run_once(args, attempt_number)
+                response = {
+                    "status": "promoted",
+                    "stage": args.stage,
+                    "agent_id": result["agent_id"],
+                    "attempt_id": result["attempt"]["attempt_id"],
+                    "event_log": result["event_log"],
+                }
+            print(json.dumps(response, ensure_ascii=False))
             return
         except RoleRunError as exc:
             errors.append(str(exc))
