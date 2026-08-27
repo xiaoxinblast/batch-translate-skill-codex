@@ -1,6 +1,6 @@
 ---
 name: batch-translate
-description: "批量翻译工作流（Codex 适配版 v10）。支持 mqxliff/docx/xlsx/txt 的只读源文件初始化、共享项目规则、永久/运行期分层 TM、受控角色执行、程序化 QA、严格验证和独立文件导出；Windows 默认 PowerShell。"
+description: "批量翻译工作流（Codex 适配版 v10）。支持 mqxliff/xliff/docx/xlsx/txt 的只读源文件初始化、共享项目规则、永久/运行期分层 TM、受控角色执行、程序化 QA、严格验证和独立文件导出；Windows 默认 PowerShell。"
 ---
 
 # batch-translate — 批量翻译工作流
@@ -278,7 +278,7 @@ python batch_translate/batch.py summary _temp/context_analysis_<project-id>.md -
 
 ### 7. 续跑/复跑（可选）
 
-已完成或中断的批次，可用 `init --resume <已交付/源文件名.mqxliff>` 或 `data/<project-id>/_working_*.mqxliff` 重新初始化：
+已完成或中断的批次，可用 `init --resume <已交付/源文件名.mqxliff>`（或 `.xliff`）或 `data/<project-id>/_working_*.mqxliff` 重新初始化：
 
 - 状态文件已存在 → 不覆盖，直接运行 `next` 继续
 - 状态已清理 → 从带译文文件重新初始化，已有译文自动锁定
@@ -418,7 +418,7 @@ python batch_translate/batch.py export
 python batch_translate/batch.py term-gaps
 ```
 
-`export` 支持 mqxliff/docx/xlsx/xlsm/txt，并先写候选文件、重新解析校验，再原子放入交付路径。
+`export` 支持 mqxliff/xliff/docx/xlsx/xlsm/txt，并先写候选文件、重新解析校验，再原子放入交付路径。
 导出目标必须是新文件；即使使用 `--force`，也拒绝覆盖用户源文件或受管工作副本。
 
 ## Shell 命令规范

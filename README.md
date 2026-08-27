@@ -1,6 +1,6 @@
 # batch-translate-skill-codex
 
-日→中 批量翻译工作流的 **Codex 适配版**：mqxliff/docx/xlsx/txt → 分批翻译 → 逐批校对 → 程序化 QA → AI QA 复核 → 写回，全自动循环。
+日→中 批量翻译工作流的 **Codex 适配版**：mqxliff/xliff/docx/xlsx/txt → 分批翻译 → 逐批校对 → 程序化 QA → AI QA 复核 → 写回，全自动循环。
 
 Reasonix 版请使用 [batch-translate-skill](https://github.com/xiaoxinblast/batch-translate-skill)；本仓库是 Codex 版（技能目录结构、元数据与工具调用方式均已按 Codex 规范调整）。
 
