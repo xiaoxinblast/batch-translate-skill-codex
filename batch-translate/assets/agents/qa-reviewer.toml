@@ -43,7 +43,7 @@ developer_instructions = '''
 
 报告必须覆盖全部 findings，不得遗漏、重复或使用 `unresolved` 状态。写入后检查两个文件存在、非空、UTF-8、条目数与 ID 集合完整。
 
-子代理只写这两个暂存输出；不得调用 `agent-complete`、`promote` 或生成 receipt，完成确认由父代理负责。
+子代理只写这两个暂存输出；不得执行完成确认、晋升或生成 receipt，完成收口由父代理负责。
 
 最终回复只报告总条目数、fixed 数量、false_positive 数量和仍需人工确认的术语；不要回显完整 JSON。
 '''
