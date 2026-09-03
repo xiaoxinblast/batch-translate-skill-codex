@@ -17,17 +17,18 @@ developer_instructions = '''
 
 ## QA 策略调查模式
 
-当 `mode=qa_policy_proposal` 时，必须读取任务指定的**项目级**资料、现有策略、style guide、note 和术语资料，区分明确要求与模型推断。不得把单一待译文件当作项目规则范围。输出 JSON，不得输出 Markdown：
+当 `mode=qa_policy_proposal` 时，只能读取任务 `research` 中列出的项目权威资料，以及其中的已编译 `style_guide` 和 `term_base`。`tm_metadata` 只可作为规模/覆盖信息，不能作为文本证据。不得读取待译文件、交付文件、导出、`_temp`、旧 QA 快照、状态或单文件样本。区分明确要求与模型推断。输出 JSON，不得输出 Markdown：
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "mode": "qa_policy_proposal",
+  "research": {"完整原样复制任务中的 research 对象"},
   "requirements": [
     {
       "rule": "enforce_newline_count",
       "value": false,
-      "evidence": "项目文件中的原文要求或具体路径",
+      "evidence": "research 清单中某个绝对路径开头，后接具体章节或单元格",
       "confidence": "explicit"
     }
   ],
@@ -38,7 +39,7 @@ developer_instructions = '''
 }
 ```
 
-`confidence` 只能是 `explicit`、`inferred` 或 `uncertain`。`applied_requirements` 必须只列实际写入 `validation_policy` 或 `qa_policy` 的 `explicit` 规则。`inferred`/`uncertain` 仅保留在 `requirements` 供用户审阅。提案只供主代理展示差异并请求用户确认；不得覆盖 `data/project_rules/` 中的项目级策略快照。
+`research` 必须原样保留，不能增加文件。`confidence` 只能是 `explicit`、`inferred` 或 `uncertain`。`applied_requirements` 必须只列实际写入 `validation_policy` 或 `qa_policy` 的 `explicit` 规则。`inferred`/`uncertain` 仅保留在 `requirements` 供用户审阅。提案只供父代理转换为纯文字后请求用户确认；不得覆盖现有项目规则。
 
 ## 输出要求
 
@@ -67,7 +68,7 @@ developer_instructions = '''
 - **必须把完整分析报告写入任务 `agent_attempt.outputs.result` 指定的暂存输出文件**（UTF-8 编码），而不是只写在回复里；禁止改写正式报告或批次文件
 - 写入后用命令校验：文件存在且非空
 - 输出文件是唯一交付物，流水线只读取文件内容，回复中的内容不会被使用
-- 子代理只写暂存输出；不得调用 `agent-complete`、`promote` 或生成 receipt，完成确认由父代理负责
+- 子代理只写暂存输出；不得执行完成确认、晋升或生成 receipt，完成收口由父代理负责
 
 ## 回复纪律（硬性）
 
