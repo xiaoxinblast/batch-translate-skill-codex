@@ -62,7 +62,11 @@ New-Item -ItemType Directory -Force batch_translate\data, batch_translate\export
 > 四个子代理由 Codex 自定义角色（`~/.codex/agents/*.toml`）替代了此前的同名技能，角色文件内含各自的 `developer_instructions` 与模型分工说明。
 > 当前分工为 `context-analyzer = gpt-5.6-luna / max`、`qa-reviewer = gpt-5.6-luna / max`，翻译与校对为 `gpt-5.6-terra / max`。
 
-当前会话具备原生角色 spawn 能力时，无论宿主终端是独立 CLI、VS Code、Desktop 还是 IDE，都使用原生编排：父代理依次执行 `agent-attempt`、等待子代理完成、`agent-complete` 和 `promote`。`scripts/run_role.py` 仅是没有原生 spawn 能力的独立 CLI 后备；详细命令见 skill 的「原生角色编排」部分。
+当前会话具备原生角色 spawn 能力时，无论宿主终端是独立 CLI、VS Code、Desktop 还是 IDE，都使用原生编排：父代理依次执行 `agent-attempt`、等待子代理完成、`agent-complete` 和 `promote`。等待超时只表示本次轮询没有新事件，不能据此中断或重试运行中的子代理；原生接口明确报告 terminal failure 后才可复用原 attempt 重试。缺少原生 spawn、等待结果无效或工具路由异常时，应停止并报告，不使用 shell 或其他角色替代。
+
+项目级 QA 提案只允许机器可执行规则。父代理必须把完整提案按固定列名 `规则名｜严重级别｜机器检查说明｜参数/阈值｜证据` 展示给用户；人工审校、主观质量判断和未决问题不得进入提案。
+
+所有临时任务、agent attempt、报告和 scratch 文件统一写入项目工具包的 `batch_translate/_temp/`。`exports/` 保存批次任务、结果、receipt 和验证记录等持久产物。清理必须先 `temp audit`，再逐项核对后显式使用 `temp cleanup --apply`；不得整体处理项目根 `_temp/`。
 
 ## 兼容性
 

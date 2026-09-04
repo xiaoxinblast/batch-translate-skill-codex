@@ -40,7 +40,7 @@ python <skill_dir>\scripts\install_roles.py --check
 2. 只向用户确认这三项。未确认不得初始化文件或启动翻译角色。
 3. 先编译三项资源。运行 `project-config show`；只有 `proposal_compiled=true` 且 `data/qa_rules.txt` 存在时，才向用户说明其 revision、确认来源和规则文件路径，然后复用它。旧 revision 仅作兼容记录，不可作为新版工作流的 QA 规则。
 4. 若项目没有有效 revision，或用户明确要求替换规则，才生成一次项目级 QA 提案。提案只能依据项目权威资料、已编译的风格指南和术语库，以及不含文件路径的 TM 元数据；不得引用待译文件、交付文件、导出、`_temp`、旧 QA 快照、状态或单文件样本。
-5. 用 `context-analyzer` 生成机器提案，验证后由父代理在对话中用纯文字列出：每条可执行规则、取值、证据、未决问题，以及不会启用的推断项。不得向用户展示 JSON、脚本或内部路径结构。
+5. 用 `context-analyzer` 生成机器提案，先运行 `project-config validate-proposal` 校验调研资料、证据和来源哈希，再运行 `project-config render-proposal` 输出固定表格。父代理在对话中完整展示所有机器规则（包括未启用的 inferred/uncertain 项）。展示格式固定为五列表格，列名必须严格为：`规则名｜严重级别｜机器检查说明｜参数/阈值｜证据`。提案只能包含现有机器规则目录中的规则；禁止人工审校、主观质量评价、角色语气/自然度判断或其他不能由脚本执行的规则，`unresolved_questions` 必须为 `[]`。`render-proposal` 只负责机器规则结构校验和呈现，不能替代 `validate-proposal` 的来源新鲜度校验。不得向用户展示 JSON、脚本或内部路径结构。
 6. 本轮在展示提案后停止，等待用户明确确认。确认后才编译 revision：
 
 ```powershell
@@ -75,7 +75,7 @@ $attempt = python batch_translate/batch.py agent-attempt <stage> --project <proj
 
 1. 若返回的是同一待完成 attempt，继续观察它，不得再次 spawn 同一角色。
 2. 用对应原生角色启动子代理。子代理只读取 `$attempt.agent_input`，只写 `$attempt.outputs` 指定的暂存文件。
-3. 父代理从原生调用结果取得真实 `agent_id`。等待期间可用 `list_agents` 查询状态，或用 `send_message`/`followup_task` 补充工作；`wait_agent` 到时只表示没有新事件，不是子代理失败。
+3. 父代理从原生调用结果取得真实 `agent_id`。等待期间可用 `list_agents` 查询状态，或用 `send_message`/`followup_task` 补充工作；`wait_agent` 的 timeout 只是一次轮询没有新事件，绝不等于子代理失败。不得因为沉默、耗时几分钟或一次等待超时就 `interrupt_agent`、重新 spawn 或重试。只有原生接口明确报告 terminal failure/cancelled，且输出缺失或不稳定时才可重试；重试前先核对已有 attempt，优先复用同一未完成 attempt，不得并行创建同一角色的第二个 attempt。
 4. 子代理真实完成、输出存在且稳定后，由父代理一次性收口：
 
 ```powershell
@@ -85,6 +85,8 @@ python batch_translate/batch.py agent-finalize <stage> --attempt-dir <attempt-di
 `agent-finalize` 验证稳定输出，写完成事件，原子晋升正式文件并创建 receipt v2；重复调用同一完成 attempt 是幂等的。子代理不得执行收口、receipt 或正式批次写入。
 
 如果原生调用出现工具路由错误或无效等待结果，立即停止本轮后续子代理调用，不创建新 attempt，也不使用替代执行路径。报告已有 attempt 和 `/subagents` 状态；后续会话重新调用 `agent-attempt` 会复用未完成的原生 attempt。
+
+所有临时文件必须集中在 `batch_translate/_temp/`：包括项目 QA 调研任务、context 临时任务、agent attempt、报告和其他 scratch 文件。`exports/<project-id>/` 中的批次任务、晋升结果、receipt、summary 和最终验证记录属于持久协议产物，不得当作临时文件清理。`submit`/`export` 的相邻原子事务临时文件由命令自动清理。需要清理时先运行 `temp audit`，默认只预览；只有逐项核对审计清单后才允许使用 `temp cleanup --apply`。不得整体删除、迁移或重命名项目根 `_temp/`，尤其不得破坏历史 receipt/state 中仍引用的路径。
 
 ## 批次循环
 
@@ -101,7 +103,7 @@ python batch_translate/scripts/verify_batch.py --stem <project-id>
 
 必须核验条目集合、锁定译文、标签、长度、换行和空译文规则。`source_guided` 允许自然重排软换行，但不允许破坏硬段落或堆积标签。
 
-5. 运行 `qa --project <project-id>`。无 finding 时直接 `submit`；有 finding 时运行 `qa-reviewer`，收口两个输出后用 `qa-submit`。QA 代理必须逐条标记 `fixed` 或 `false_positive` 并说明原因，不能改锁定译文。
+5. 运行 `qa --project <project-id>`。无 finding 时直接使用命令输出的完整 `submit` 命令；有 finding 时运行 `qa-reviewer`，收口两个输出后直接使用命令输出的完整 `qa-submit '<result>' --report '<report>' --project '<project-id>'` 命令，不手工改写路径。QA 代理必须逐条标记 `fixed` 或 `false_positive` 并说明原因，不能改锁定译文。
 6. 成功提交会事务写入工作副本和本批运行期 TM。任一校验失败时不推进批次。
 
 翻译、校对和 QA 都读取永久与运行期两层 TM。永久 TM 有精确匹配时优先；角色不得把 TM 匹配当作不经核对的直接替换。
@@ -115,7 +117,7 @@ python batch_translate/batch.py export --project <project-id>
 python batch_translate/batch.py term-gaps --project <project-id>
 ```
 
-`export` 必须导出为新文件，拒绝覆盖用户源文件或工作副本。完成前确认：所有批次已提交、receipt 完整、最终验证通过、导出可重新解析、源文件 SHA-256 不变。
+`export` 必须导出为新文件，拒绝覆盖用户源文件或工作副本；在 Windows 上还必须启用并核验目标文件的继承 ACL，确保导出的文件可独立读取。权限或访问核验失败时，导出事务必须回滚原目标。完成前确认：所有批次已提交、receipt 完整、最终验证通过、导出可重新解析、源文件 SHA-256 不变。
 
 ## 约束
 

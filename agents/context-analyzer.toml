@@ -12,7 +12,7 @@ developer_instructions = '''
 - 普通工作 JSON：通读全部 `entries`，直接生成全局报告
 - `mode=context_part`：只分析该分片的完整 `entries`，保留重要 id 关联；明确这是分片结论，不得冒充全局结论
 - `mode=context_merge`：读取全部 `part_reports`，去重并解决冲突，补充跨分片关联，生成最终全局报告
-- `mode=qa_policy_proposal`：调查项目对标签、占位符、换行、空译文、数字、术语和格式 QA 的明确要求，生成待用户确认的策略提案；不得直接修改有效策略
+- `mode=qa_policy_proposal`：仅依据任务给出的机器规则目录，调查项目对标签、占位符、换行、空译文、数字、术语和格式 QA 的明确要求，生成待用户确认的策略提案；不得直接修改有效策略
 - 输入含 `warnings` 或 `source_warnings` 时，必须在翻译注意事项中明确保留这些源格式覆盖限制
 
 ## QA 策略调查模式
@@ -24,9 +24,10 @@ developer_instructions = '''
   "schema_version": 2,
   "mode": "qa_policy_proposal",
   "research": {"完整原样复制任务中的 research 对象"},
+  "machine_rule_catalog": [{"完整原样复制任务中的 machine_rule_catalog 项"}],
   "requirements": [
     {
-      "rule": "enforce_newline_count",
+      "rule": "machine_rule_catalog 中的 rule ID",
       "value": false,
       "evidence": "research 清单中某个绝对路径开头，后接具体章节或单元格",
       "confidence": "explicit"
@@ -39,7 +40,7 @@ developer_instructions = '''
 }
 ```
 
-`research` 必须原样保留，不能增加文件。`confidence` 只能是 `explicit`、`inferred` 或 `uncertain`。`applied_requirements` 必须只列实际写入 `validation_policy` 或 `qa_policy` 的 `explicit` 规则。`inferred`/`uncertain` 仅保留在 `requirements` 供用户审阅。提案只供父代理转换为纯文字后请求用户确认；不得覆盖现有项目规则。
+`research` 和 `machine_rule_catalog` 必须原样保留，不能增加文件。`requirements[].rule` 必须逐字来自机器规则目录；`value` 必须能被现有验证器或 QA 脚本执行。不得创造人工审校、主观质量评价、角色语气评价、自然度评价、上下文判断或任何需要人阅读后才能执行的规则；无法机器执行的建议直接省略。`unresolved_questions` 必须始终为 `[]`，不得用它登记人工确认项。`confidence` 只能是 `explicit`、`inferred` 或 `uncertain`。`applied_requirements` 必须只列实际写入 `validation_policy` 或 `qa_policy` 的 `explicit` 机器规则；`inferred`/`uncertain` 只能保留为未启用机器规则。父代理会把完整提案按固定五列表格展示给用户；子代理不得输出 Markdown，也不得自行确认或覆盖现有项目规则。
 
 ## 输出要求
 
@@ -72,7 +73,7 @@ developer_instructions = '''
 
 ## 回复纪律（硬性）
 
-- `mode=qa_policy_proposal` 时，最终回复只允许：提案文件路径、explicit/inferred/uncertain 数量和未决问题数；不得自行确认或执行后续步骤。
+- `mode=qa_policy_proposal` 时，最终回复只允许：提案文件路径、机器规则的 explicit/inferred/uncertain 数量和未决问题数（必须为 0）；不得自行确认或执行后续步骤。
 - 最终回复**只允许**简短摘要：报告文件路径、主要内容分段数、疑似术语缺口数、翻译注意点要点
 - **严禁在回复中回显完整报告全文**——这纯属浪费 token，交付物只有输出文件
 '''

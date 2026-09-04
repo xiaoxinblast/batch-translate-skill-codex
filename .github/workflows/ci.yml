@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install PyYAML tomli
+      - run: python -m pip install tomli
       - run: python -m unittest discover -s tests
       - run: python -X utf8 scripts/quick_validate.py batch-translate
-      - run: python -c "import yaml, pathlib; yaml.safe_load((pathlib.Path('batch-translate') / 'agents' / 'openai.yaml').read_text(encoding='utf-8'))"
+      - run: python -c "import pathlib, re; text=(pathlib.Path('batch-translate') / 'agents' / 'openai.yaml').read_text(encoding='utf-8'); assert re.search(r'(?m)^  display_name:', text); assert re.search(r'(?m)^  short_description:', text); assert re.search(r'(?m)^  default_prompt:', text)"

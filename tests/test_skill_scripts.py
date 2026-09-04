@@ -27,6 +27,7 @@ def _load(name: str, path: Path):
 
 check_toolkit = _load("check_toolkit", SKILL / "scripts" / "check_toolkit.py")
 install_roles = _load("install_roles", SKILL / "scripts" / "install_roles.py")
+quick_validate = _load("quick_validate", ROOT / "scripts" / "quick_validate.py")
 
 
 class ToolkitCheckTest(unittest.TestCase):
@@ -147,6 +148,45 @@ class RoleInstallTest(unittest.TestCase):
             self.assertEqual(set(changed), set(install_roles.MANAGED_ROLES))
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "name = 'custom'\n")
             self.assertEqual(install_roles.install(destination, check=True), [])
+
+
+class QuickValidationTest(unittest.TestCase):
+    def test_current_skill_validates_without_optional_yaml_dependency(self):
+        valid, message = quick_validate.validate_skill(SKILL)
+
+        self.assertTrue(valid, message)
+
+    def test_parses_supported_nested_frontmatter(self):
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp)
+            (skill / "SKILL.md").write_text(
+                "---\r\n"
+                "name: sample-skill\r\n"
+                "description: \"A description with # in a string\"\r\n"
+                "allowed-tools: [\"read\", \"write\"]\r\n"
+                "metadata:\r\n"
+                "  short-description: 简短说明\r\n"
+                "---\r\n\r\n正文\r\n",
+                encoding="utf-8",
+                newline="",
+            )
+
+            valid, message = quick_validate.validate_skill(skill)
+
+        self.assertTrue(valid, message)
+
+    def test_rejects_malformed_frontmatter_without_yaml_import(self):
+        with tempfile.TemporaryDirectory() as temp:
+            skill = Path(temp)
+            (skill / "SKILL.md").write_text(
+                "---\nname sample-skill\n---\n",
+                encoding="utf-8",
+            )
+
+            valid, message = quick_validate.validate_skill(skill)
+
+        self.assertFalse(valid)
+        self.assertIn("Invalid YAML in frontmatter", message)
 
 
 if __name__ == "__main__":
